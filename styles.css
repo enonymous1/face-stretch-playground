@@ -1,0 +1,106 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f4f2ec;
+  color: #222;
+  line-height: 1.5;
+}
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { margin: 0 0 8px; font-size: 2rem; }
+h2 { margin: 0 0 12px; font-size: 1.25rem; }
+.tagline { font-size: 1.1rem; margin: 0 0 8px; }
+.privacy, .small { font-size: 0.9rem; color: #555; }
+.card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  padding: 20px;
+  margin-top: 20px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+button {
+  font: inherit;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid #bbb;
+  background: #fff;
+  cursor: pointer;
+}
+button:hover { background: #f0eee8; }
+button.primary { background: #222; color: #fff; border-color: #222; }
+button.primary:hover { background: #444; }
+button[aria-pressed="true"] { background: #222; color: #fff; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+.primary-row { border-top: 1px solid #eee; padding-top: 14px; }
+.error { color: #a00; }
+.hint { color: #555; }
+
+/* Upload */
+.dropzone {
+  border: 2px dashed #bbb;
+  border-radius: 16px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+}
+.dropzone.drag-over { border-color: #222; background: #f9f7f0; }
+
+/* Pick stage: the photo sets the size, boxes sit on top in %. */
+.photo-stage {
+  position: relative;
+  width: min(100%, 560px);
+  margin: 0 auto;
+  touch-action: none;
+  user-select: none;
+}
+.photo-stage img { display: block; width: 100%; height: auto; border-radius: 12px; }
+.boxes { position: absolute; inset: 0; }
+.face-box {
+  position: absolute;
+  border: 3px solid #ffd23f;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0;
+  cursor: move;
+}
+.face-box.is-selected { border-color: #ff4d2e; box-shadow: 0 0 0 2px rgba(255,77,46,0.35); }
+.face-box .face-label {
+  position: absolute; top: -24px; left: 0;
+  background: #ff4d2e; color: #fff;
+  font-size: 12px; padding: 2px 6px; border-radius: 999px;
+  white-space: nowrap;
+}
+.face-box .resize-handle {
+  position: absolute; right: -8px; bottom: -8px;
+  width: 22px; height: 22px;
+  background: #ff4d2e; border: 2px solid #fff; border-radius: 50%;
+  cursor: nwse-resize;
+}
+
+/* Play stage: same stretch + spring as jpl-dev's avatar egg. */
+.play-card { text-align: center; }
+.play-stage {
+  background: radial-gradient(circle at 50% 40%, #3a3f4a, #14161c 75%);
+  border-radius: 16px;
+  padding: 32px 16px;
+  overflow: hidden;
+}
+.play-face {
+  display: block;
+  width: min(320px, 80vw);
+  height: auto;
+  margin: 0 auto;
+  border-radius: 16px;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+.play-face:active { cursor: grabbing; }
+.play-face.is-springing { transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.play-readout { font-variant-numeric: tabular-nums; }
+.sound-toggle { display: inline-flex; gap: 6px; align-items: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .play-face.is-springing { transition: none; }
+}

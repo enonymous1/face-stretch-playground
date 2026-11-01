@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Stretch Playground</title>
+<meta name="description" content="Upload a photo, find a face in it, and stretch it like the Mario 64 title screen. Everything runs in your browser; your photo never leaves this device.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Face Stretch Playground</h1>
+    <p class="tagline">Upload a photo. Find a face. Pull it around like the Mario&nbsp;64 title screen, then let go and watch it spring back.</p>
+    <p class="privacy">No server, no upload, no account. Detection runs on-device when your browser supports it; your photo never leaves this page.</p>
+  </header>
+
+  <!-- Step 1: photo -->
+  <section id="upload-section" class="card" aria-labelledby="upload-heading">
+    <h2 id="upload-heading">1. Pick a photo</h2>
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Choose a photo">
+      <p><strong>Drop a photo here, paste one, or tap to choose.</strong></p>
+      <p class="small">A front-facing face in good light detects best. Profile shots, sunglasses, and tiny faces may miss — you can always draw the box yourself.</p>
+      <input id="file-input" type="file" accept="image/*" hidden>
+      <button id="choose-btn" type="button">Choose a photo</button>
+    </div>
+    <p id="upload-error" class="error" hidden></p>
+  </section>
+
+  <!-- Step 2: pick the face -->
+  <section id="pick-section" class="card" hidden aria-labelledby="pick-heading">
+    <h2 id="pick-heading">2. Pick the face</h2>
+    <p id="detect-status" role="status">Looking for faces…</p>
+    <div id="photo-stage" class="photo-stage">
+      <img id="photo-img" alt="Your uploaded photo" draggable="false">
+      <div id="boxes" class="boxes"></div>
+    </div>
+    <p class="hint" id="pick-hint">Tap a box to select it. Drag the selected box to move it, or drag its bottom-right corner to resize it.</p>
+    <div class="row">
+      <button id="draw-btn" type="button">Draw a box instead</button>
+      <button id="next-face-btn" type="button" hidden>Next face</button>
+      <button id="redetect-btn" type="button">Detect again</button>
+    </div>
+    <div class="row primary-row">
+      <button id="play-btn" type="button" class="primary">Play with this face →</button>
+      <button id="new-photo-btn" type="button">Use a different photo</button>
+    </div>
+  </section>
+
+  <!-- Step 3: play -->
+  <section id="play-section" class="card play-card" hidden aria-labelledby="play-heading">
+    <h2 id="play-heading">3. Stretch it</h2>
+    <div class="play-stage">
+      <img id="play-face" class="play-face" alt="The selected face, ready to stretch" draggable="false">
+    </div>
+    <p class="play-readout" role="status"><span id="stretch-readout">1.0× × 1.0×</span> · <span id="stretch-best">Biggest stretch yet: 1.0×</span></p>
+    <p class="hint">Drag the face to stretch it — let go and it springs back. Same math as the jpl-dev avatar egg: 150px of drag is 1×, clamped to 0.5×–2×.</p>
+    <div class="row">
+      <button id="pull-wide-btn" type="button">Pull wide</button>
+      <button id="pull-tall-btn" type="button">Pull tall</button>
+      <button id="squish-btn" type="button">Squish</button>
+      <label class="sound-toggle"><input id="sound-toggle" type="checkbox" checked> Boing sound</label>
+    </div>
+    <div class="row">
+      <button id="back-to-pick-btn" type="button">← Pick a different face</button>
+      <button id="play-new-photo-btn" type="button">Use a different photo</button>
+    </div>
+  </section>
+
+  <footer>
+    <p class="small">Inspired by the Super Mario 64 title-screen face. Not affiliated with Nintendo. Stretch math reused from the jpl-dev avatar easter egg, with permission from its author (same person).</p>
+  </footer>
+</main>
+<script src="js/stretch.js"></script>
+<script src="js/face.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

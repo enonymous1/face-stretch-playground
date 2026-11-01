@@ -1,0 +1,27 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { clampStretch, computeStretch, stretchAmount } = require('../js/stretch.js');
+
+// Same expectations as jpl-dev's tests/js for computeStretch.
+test('no drag is 1x1', () => {
+  assert.deepEqual(computeStretch(0, 0), { scaleX: 1, scaleY: 1 });
+});
+test('150px drag is +1x on that axis only', () => {
+  assert.deepEqual(computeStretch(150, 0), { scaleX: 2, scaleY: 1 });
+  assert.deepEqual(computeStretch(0, 75), { scaleX: 1, scaleY: 1.5 });
+});
+test('negative drag shrinks, clamped at 0.5x', () => {
+  assert.deepEqual(computeStretch(-75, -1000), { scaleX: 0.5, scaleY: 0.5 });
+});
+test('large drag clamps at 2x', () => {
+  assert.deepEqual(computeStretch(1000, 1000), { scaleX: 2, scaleY: 2 });
+});
+test('clampStretch bounds', () => {
+  assert.equal(clampStretch(0.4), 0.5);
+  assert.equal(clampStretch(2.4), 2);
+  assert.equal(clampStretch(1.3), 1.3);
+});
+test('stretchAmount is the largest deviation', () => {
+  assert.equal(stretchAmount(1.7, 0.9), 0.7);
+  assert.equal(stretchAmount(1, 1), 0);
+});
