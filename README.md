@@ -152,24 +152,51 @@ with a real photo remains the gate for a release.
 ## Deployment
 
 This is a static site. There is no build, no server, and no
-environment to configure, so deployment is "host the folder":
+environment to configure, so deployment is "host the folder" — and
+the recommended route is a GitHub Pages workflow, so the live demo
+is always the tested code.
 
-**GitHub Pages (recommended for this repo):**
+**GitHub Pages via workflow (recommended for this repo):**
+
+The workflow is `.github/workflows/pages.yml` ("Deploy to GitHub
+Pages"). On every push to `main` — or by hand from the Actions tab
+via *Run workflow* — it:
+
+1. Runs the tests (`node --test tests/*.test.js`). A failing test
+   stops the deploy, so a broken toy is never published.
+2. Stages only the site files (`index.html`, `styles.css`, `js/`)
+   into `site/`. Tests, docs, and the README are not published to
+   the demo URL.
+3. Deploys that staging directory with `configure-pages` →
+   `upload-pages-artifact` → `deploy-pages`.
+
+One-time setup, on GitHub, before the first run:
 
 1. Push `main` to GitHub.
-2. Settings → Pages → Source: *Deploy from a branch*.
-3. Branch: `main`, folder: `/ (root)`, Save.
-4. The site is live at `https://enonymous1.github.io/face-stretch-playground/`.
+2. Settings → Pages → Source: *GitHub Actions* (not "Deploy from a
+   branch" — artifact deployments need the Actions source).
+3. The site is live at `https://enonymous1.github.io/face-stretch-playground/`.
+
+**Trying the live demo:** open that URL, upload your own photo
+(file picker, drag-and-drop, or paste), pick the face, and stretch
+it. That "self upload" is client-side only: the photo is read in
+your browser, detection runs on-device (or via the MediaPipe model
+download on the fallback path), and the photo is never sent to
+GitHub Pages or any other server. Pages only serves the static
+files. No sample photo is bundled, by design.
 
 **Any other static host** (Netlify, Cloudflare Pages, Vercel, S3, or
 a plain web server): upload the repository contents as-is. No build
 command, no output directory, no rewrites. `index.html` at the root
-is the entry point.
+is the entry point. All asset references in `index.html` are
+relative (`styles.css`, `js/...`), so the demo also works under a
+subpath like `/face-stretch-playground/`.
 
 After deployment, verify with a real photo in a real browser: upload,
-detect, pick, stretch, release. The first CI run after push is also
-still a gate — the workflow is in `.github/workflows/test.yml`
-(Node 22, JS syntax check + tests on push and pull request).
+detect, pick, stretch, release. The first CI run and the first Pages
+run after push are both still gates — CI is in
+`.github/workflows/test.yml` (Node 22, JS syntax check + tests on
+push and pull request), Pages in `.github/workflows/pages.yml`.
 
 ## Limitations and privacy
 

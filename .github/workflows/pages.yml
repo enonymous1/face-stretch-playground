@@ -1,0 +1,58 @@
+# Deploy the live demo to GitHub Pages.
+#
+# Why a workflow, not "Deploy from a branch": this repo has no build
+# step, but the demo still deserves a gate — the tests must pass
+# before a broken toy is published. So this job runs the same checks
+# as test.yml, stages only the site files (index.html, styles.css,
+# js/), and deploys that staging directory. Nothing else in the repo
+# (tests, docs, README) is published to the demo URL.
+#
+# The demo is the app itself, not a canned screenshot: a visitor
+# uploads their own photo in the browser, detection runs on-device,
+# and the photo never reaches GitHub Pages (or any server) — Pages
+# only serves the static files. That is why no sample photo is
+# bundled and no upload endpoint exists.
+#
+# One-time setup, on GitHub, before the first run:
+#   Settings -> Pages -> Source: GitHub Actions
+# (not "Deploy from a branch" — artifact deployments need the
+# Actions source). After that, every push to main redeploys, and
+# the workflow can also be run by hand from the Actions tab.
+# Live URL: https://enonymous1.github.io/face-stretch-playground/
+name: Deploy to GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Gate on tests (do not publish a broken demo)
+        run: node --test tests/stretch.test.js tests/face.test.js tests/load-order.test.js
+      - name: Stage site files only
+        run: |
+          mkdir -p site/js
+          cp index.html styles.css site/
+          cp js/*.js site/js/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
