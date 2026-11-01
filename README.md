@@ -130,6 +130,16 @@ python3 -m http.server 8000
    `prefers-reduced-motion` in both modes. The boing is a tiny
    WebAudio synth — no audio files — and can be toggled off.
 
+   **Hold stretch (on by default):** a pull stays where you left
+   it instead of springing back. Drag again to pull further — the
+   second drag starts from the held stretch, not from rest, in both
+   modes (whole-face scales multiply and clamp; warp pulls deform
+   from the held mesh). `Reset face` is the way back to the
+   original in either mode. Uncheck Hold stretch and pulls spring
+   back on release, as in the original toy. Hold does not persist
+   across a reload: the photo itself is never saved, so there is
+   nothing to restore a stretch onto.
+
 ### Project structure
 
 ```text

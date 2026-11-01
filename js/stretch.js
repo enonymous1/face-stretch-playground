@@ -62,6 +62,24 @@ function stretchAmount(scaleX, scaleY) {
   return Math.max(Math.abs(scaleX - 1), Math.abs(scaleY - 1));
 }
 
+/**
+ * Combine a held scale with a new drag's scale, for "hold stretch"
+ * mode. Multiplicative, not additive: dragging from a held 1.5x
+ * with a 1.5x drag gives 2.25x, clamped to 2x — not 1.5x again,
+ * which is what you would get if every drag recomputed from 1x1
+ * and wiped the held stretch. Additive would also be wrong: a
+ * held 0.6x plus a 0.6x drag would be 0.2x, outside the clamp.
+ * @param {{scaleX: number, scaleY: number}} baseScale - Scale at drag start (held, or 1x1).
+ * @param {{scaleX: number, scaleY: number}} dragScale - Scale from computeStretch for this drag.
+ * @returns {{scaleX: number, scaleY: number}} Clamped combined scale.
+ */
+function combineStretch(baseScale, dragScale) {
+  return {
+    scaleX: clampStretch(baseScale.scaleX * dragScale.scaleX),
+    scaleY: clampStretch(baseScale.scaleY * dragScale.scaleY),
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { clampStretch, computeStretch, stretchAmount, STRETCH_PX_PER_UNIT, STRETCH_MIN, STRETCH_MAX };
+  module.exports = { clampStretch, computeStretch, stretchAmount, combineStretch, STRETCH_PX_PER_UNIT, STRETCH_MIN, STRETCH_MAX };
 }

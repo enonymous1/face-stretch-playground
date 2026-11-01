@@ -68,7 +68,7 @@
          pointermove, and a live region would spam screen readers.
          The detection status above is the live region; this is visual only. -->
     <p class="play-readout"><span id="stretch-readout">1.0× × 1.0×</span> · <span id="stretch-best">Biggest stretch yet: 1.0×</span></p>
-    <p class="hint">Whole-face mode: drag the face to stretch it — let go and it springs back. Same math as the jpl-dev avatar egg: 150px of drag is 1×, clamped to 0.5×–2×. Pull-parts mode: grab a dot (nose, chin, eyes, mouth, cheeks) or drag anywhere on the face to pull just that area.</p>
+    <p class="hint">Whole-face mode: drag the face to stretch it. Same math as the jpl-dev avatar egg: 150px of drag is 1×, clamped to 0.5×–2×. Pull-parts mode: grab a dot (nose, chin, eyes, mouth, cheeks) or drag anywhere on the face to pull just that area. Hold stretch is on by default: a pull stays where you left it — drag again to pull further, and tap Reset face to go back to the original. Uncheck Hold stretch and pulls spring back on release, as before.</p>
     <div class="row">
       <button id="pull-parts-btn" type="button" disabled>Pull face parts</button>
       <button id="whole-face-btn" type="button" aria-pressed="true">Stretch whole face</button>
@@ -77,9 +77,11 @@
       <button id="pull-wide-btn" type="button">Pull wide</button>
       <button id="pull-tall-btn" type="button">Pull tall</button>
       <button id="squish-btn" type="button">Squish</button>
+      <label class="sound-toggle"><input id="hold-toggle" type="checkbox" checked> Hold stretch</label>
       <label class="sound-toggle"><input id="sound-toggle" type="checkbox" checked> Boing sound</label>
     </div>
     <div class="row">
+      <button id="reset-face-btn" type="button">Reset face</button>
       <button id="back-to-pick-btn" type="button">← Pick a different face</button>
       <button id="play-new-photo-btn" type="button">Use a different photo</button>
     </div>

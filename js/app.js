@@ -37,6 +37,8 @@
   const stretchReadout = $('stretch-readout');
   const stretchBest = $('stretch-best');
   const soundToggle = $('sound-toggle');
+  const holdToggle = $('hold-toggle');
+  const resetFaceBtn = $('reset-face-btn');
 
   /** Read a config number with a fallback, so app.js still works if config.js is missing. */
   function cfg(key, fallback) {
@@ -74,6 +76,8 @@
     boxes: [], selected: 0, drawMode: false,
     photoUrl: null, playUrl: null,
     best: 0,
+    /** Current whole-face scale, so a held drag starts from the held scale, not 1x1. */
+    scaleX: 1, scaleY: 1,
     /** Bumped on every new photo; async detection checks it before applying results. */
     loadGeneration: 0,
     /** Bumped on every Play; async landmark detection checks it before applying warp. */
@@ -86,6 +90,8 @@
   // for one play session and is rebuilt on every Play.
   const warp = {
     sourceCanvas: null, mesh: null, deformed: null, handles: [],
+    /** Points a drag starts from: rest normally, held deformed after a held pull. */
+    basePoints: null,
     radius: 0, grabIndex: -1, dragging: false,
     startCanvasX: 0, startCanvasY: 0, lastDragPx: 0,
     rafPending: false, springRaf: 0, springTimeout: 0,
@@ -350,7 +356,7 @@
     const generation = ++state.playGeneration;
     // Reset warp state: a stale mesh from a previous face must never
     // warp a new face, even if its landmark request lands late.
-    warp.mesh = null; warp.deformed = null; warp.handles = [];
+    warp.mesh = null; warp.deformed = null; warp.handles = []; warp.basePoints = null;
     warp.dragging = false; cancelAnimationFrame(warp.springRaf);
     const expanded = expandBox(state.boxes[state.selected], CROP_PAD);
     const px = boxToPixels(expanded, state.width, state.height);
@@ -361,6 +367,7 @@
     state.playUrl = await canvasToObjectUrl(crop, 'image/jpeg', JPEG_QUALITY);
     playFace.src = state.playUrl;
     state.best = 0;
+    state.scaleX = 1; state.scaleY = 1;
     setStretch(1, 1);
     stretchBest.textContent = 'Biggest stretch yet: 1.0×';
     setPlayMode('whole');
@@ -387,6 +394,7 @@
       warp.sourceCanvas = crop;
       warp.mesh = mesh;
       warp.deformed = mesh.points.map((p) => ({ ...p }));
+      warp.basePoints = mesh.points.map((p) => ({ ...p }));
       warp.radius = Math.max(20, faceWidth(result.points) * PULL_RADIUS_FACTOR);
       // Handles: named landmarks via the dedupe map, plus cheeks
       // geometrically (leftmost/rightmost landmark, mapped the same way).
@@ -492,6 +500,7 @@
     cancelAnimationFrame(warp.springRaf);
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       warp.deformed = warp.mesh.points.map((p) => ({ ...p }));
+      warp.basePoints = warp.mesh.points.map((p) => ({ ...p }));
       renderWarp();
       return;
     }
@@ -506,19 +515,27 @@
       }));
       renderWarp();
       if (t < 1) warp.springRaf = requestAnimationFrame(step);
-      else warp.deformed = warp.mesh.points.map((p) => ({ ...p }));
+      else {
+        warp.deformed = warp.mesh.points.map((p) => ({ ...p }));
+        warp.basePoints = warp.mesh.points.map((p) => ({ ...p }));
+      }
     };
     warp.springRaf = requestAnimationFrame(step);
   }
 
-  /** Pull one handle by (dx, dy) canvas pixels, then spring back (keyboard / preset pulls). */
+  /** Pull one handle by (dx, dy) canvas pixels, then spring back — unless Hold is on, in which case it stays. */
   function warpPullAndSpring(grabIndex, dx, dy) {
     if (!warp.mesh) return;
     cancelAnimationFrame(warp.springRaf);
     clearTimeout(warp.springTimeout);
-    warp.deformed = deformPoints(warp.mesh.points, grabIndex, dx, dy, warp.radius, warp.mesh.anchorIndices);
+    const base = warp.basePoints || warp.mesh.points;
+    warp.deformed = deformPoints(base, grabIndex, dx, dy, warp.radius, warp.mesh.anchorIndices);
     renderWarp();
-    warp.springTimeout = setTimeout(() => animateWarpSpringBack(warp.deformed), 220);
+    if (holdToggle.checked) {
+      warp.basePoints = warp.deformed.map((p) => ({ ...p }));
+    } else {
+      warp.springTimeout = setTimeout(() => animateWarpSpringBack(warp.deformed), 220);
+    }
     playBoing(soundToggle.checked);
   }
 
@@ -527,6 +544,10 @@
     if (!warp.mesh) return;
     cancelAnimationFrame(warp.springRaf);
     clearTimeout(warp.springTimeout);
+    // Snapshot the current mesh as the drag base: rest normally,
+    // held deformed after a held pull. Without this, every drag
+    // would recompute from rest and wipe the held stretch.
+    warp.basePoints = warp.deformed.map((p) => ({ ...p }));
     const p = warpCanvasPoint(e);
     // Nearest landmark is the grab — no need to hit a 14px dot
     // exactly, which would be fiddly on a phone. Anchors (corners)
@@ -542,14 +563,20 @@
     const p = warpCanvasPoint(e);
     const dx = p.x - warp.startCanvasX, dy = p.y - warp.startCanvasY;
     warp.lastDragPx = Math.hypot(dx, dy);
-    warp.deformed = deformPoints(warp.mesh.points, warp.grabIndex, dx, dy, warp.radius, warp.mesh.anchorIndices);
+    warp.deformed = deformPoints(warp.basePoints, warp.grabIndex, dx, dy, warp.radius, warp.mesh.anchorIndices);
     scheduleRenderWarp();
   });
   function endWarpDrag() {
     if (!warp.dragging) return;
     warp.dragging = false;
-    const from = warp.deformed;
-    animateWarpSpringBack(from);
+    if (holdToggle.checked) {
+      // Hold is the point of this mode: the pull stays, and the
+      // next drag starts from it (basePoints, snapshotted at
+      // pointerdown). Reset face is the only way back to rest.
+      warp.basePoints = warp.deformed.map((p) => ({ ...p }));
+    } else {
+      animateWarpSpringBack(warp.deformed);
+    }
     if (warp.lastDragPx > 40) playBoing(soundToggle.checked);
   }
   playCanvas.addEventListener('pointerup', endWarpDrag);
@@ -573,6 +600,7 @@
    * @param {number} sy
    */
   function setStretch(sx, sy) {
+    state.scaleX = sx; state.scaleY = sy;
     playFace.style.transform = `scale(${sx}, ${sy})`;
     stretchReadout.textContent = `${sx.toFixed(1)}× × ${sy.toFixed(1)}×`;
     const amount = stretchAmount(sx, sy);
@@ -583,7 +611,29 @@
   }
 
   /**
-   * Animate a button/keyboard pull, then spring back.
+   * Reset both play modes to rest: whole-face scale to 1x1, warp
+   * mesh to its rest points, best-stretch meter cleared. This is
+   * the "reset someway" for Hold mode — without it, a held stretch
+   * would have no way back except a new photo.
+   */
+  function resetFace() {
+    cancelAnimationFrame(warp.springRaf);
+    clearTimeout(warp.springTimeout);
+    warp.dragging = false; dragging = false;
+    playFace.classList.remove('is-springing');
+    state.best = 0;
+    setStretch(1, 1);
+    stretchBest.textContent = 'Biggest stretch yet: 1.0×';
+    if (warp.mesh) {
+      warp.deformed = warp.mesh.points.map((p) => ({ ...p }));
+      warp.basePoints = warp.mesh.points.map((p) => ({ ...p }));
+      if (state.playMode === 'warp') renderWarp();
+    }
+  }
+
+  /**
+   * Animate a button/keyboard pull, then spring back — unless Hold
+   * is on, in which case the pull stays until Reset face.
    * The double requestAnimationFrame is not cargo-cult: removing the
    * spring class and setting the transform in the same frame lets
    * the browser batch them, so the transition never runs. Two frames
@@ -594,6 +644,10 @@
   function animatePull(sx, sy) {
     playFace.classList.remove('is-springing');
     setStretch(sx, sy);
+    if (holdToggle.checked) {
+      playBoing(soundToggle.checked);
+      return;
+    }
     requestAnimationFrame(() => requestAnimationFrame(() => {
       playFace.classList.add('is-springing');
       setStretch(1, 1);
@@ -601,24 +655,30 @@
     }));
   }
 
-  let dragging = false, startX = 0, startY = 0, lastAmount = 0;
+  let dragging = false, startX = 0, startY = 0, lastAmount = 0, startScaleX = 1, startScaleY = 1;
   playFace.tabIndex = 0;
   playFace.addEventListener('pointerdown', (e) => {
     dragging = true; startX = e.clientX; startY = e.clientY; lastAmount = 0;
+    startScaleX = state.scaleX; startScaleY = state.scaleY;
     playFace.classList.remove('is-springing');
     try { playFace.setPointerCapture(e.pointerId); } catch (err) { /* synthetic */ }
   });
   playFace.addEventListener('pointermove', (e) => {
     if (!dragging) return;
     const s = computeStretch(e.clientX - startX, e.clientY - startY);
-    setStretch(s.scaleX, s.scaleY);
+    // Combine with the held scale, not 1x1: otherwise a second drag
+    // would snap a held stretch back to near-rest on its first move.
+    const combined = combineStretch({ scaleX: startScaleX, scaleY: startScaleY }, s);
+    setStretch(combined.scaleX, combined.scaleY);
     lastAmount = stretchAmount(s.scaleX, s.scaleY);
   });
   function endDrag() {
     if (!dragging) return;
     dragging = false;
-    playFace.classList.add('is-springing');
-    setStretch(1, 1);
+    if (!holdToggle.checked) {
+      playFace.classList.add('is-springing');
+      setStretch(1, 1);
+    }
     if (lastAmount > BOING_THRESHOLD) playBoing(soundToggle.checked);
   }
   playFace.addEventListener('pointerup', endDrag);
@@ -656,6 +716,7 @@
   $('play-new-photo-btn').addEventListener('click', () => show('upload'));
   pullPartsBtn.addEventListener('click', () => setPlayMode('warp'));
   wholeFaceBtn.addEventListener('click', () => setPlayMode('whole'));
+  resetFaceBtn.addEventListener('click', () => resetFace());
   // Pull wide/tall/squish are whole-face presets: in warp mode they
   // switch back first, rather than doing a confusing half-warp.
   function wholePull(sx, sy) {

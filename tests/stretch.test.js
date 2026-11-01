@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { clampStretch, computeStretch, stretchAmount } = require('../js/stretch.js');
+const { clampStretch, computeStretch, stretchAmount, combineStretch } = require('../js/stretch.js');
 
 // Same expectations as jpl-dev's tests/js for computeStretch.
 test('no drag is 1x1', () => {
@@ -24,4 +24,21 @@ test('clampStretch bounds', () => {
 test('stretchAmount is the largest deviation', () => {
   assert.equal(stretchAmount(1.7, 0.9), 0.7);
   assert.equal(stretchAmount(1, 1), 0);
+});
+test('combineStretch multiplies a held scale by a new drag, clamped', () => {
+  // Held 1.5x + a 1.5x drag is 2.25x, clamped to 2x — not 1.5x again.
+  assert.deepEqual(
+    combineStretch({ scaleX: 1.5, scaleY: 1 }, { scaleX: 1.5, scaleY: 1 }),
+    { scaleX: 2, scaleY: 1 },
+  );
+  // Held 1x1 is a no-op, so the first drag behaves exactly as before.
+  assert.deepEqual(
+    combineStretch({ scaleX: 1, scaleY: 1 }, { scaleX: 1.5, scaleY: 0.8 }),
+    { scaleX: 1.5, scaleY: 0.8 },
+  );
+  // Shrinking from a held scale clamps at the floor, not below it.
+  assert.deepEqual(
+    combineStretch({ scaleX: 0.6, scaleY: 0.6 }, { scaleX: 0.6, scaleY: 0.6 }),
+    { scaleX: 0.5, scaleY: 0.5 },
+  );
 });
