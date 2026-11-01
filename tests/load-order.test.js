@@ -17,6 +17,7 @@ test('scripts load in dependency order', () => {
     'js/config.js',
     'js/stretch.js',
     'js/face.js',
+    'js/mesh.js',
     'js/detectors.js',
     'js/audio.js',
     'js/app.js',
@@ -40,4 +41,6 @@ test('config values are sane and consistent', () => {
   assert.ok(FACE_STRETCH_CONFIG.cropPad >= 0 && FACE_STRETCH_CONFIG.cropPad < 1);
   assert.match(FACE_STRETCH_CONFIG.mediapipeVersion, /^\d+\.\d+\.\d+$/);
   assert.deepEqual(Object.keys(FACE_STRETCH_CONFIG.pullWide).sort(), ['scaleX', 'scaleY']);
+  assert.ok(FACE_STRETCH_CONFIG.faceLandmarkerModelUrl.includes('face_landmarker.task'));
+  assert.ok(FACE_STRETCH_CONFIG.landmarkPullRadiusFactor > 0);
 });

@@ -52,12 +52,27 @@
     <h2 id="play-heading">3. Stretch it</h2>
     <div class="play-stage">
       <img id="play-face" class="play-face" alt="The selected face, ready to stretch" draggable="false">
+      <!-- Warp mode: same stage, canvas instead of img. The wrap is
+           position:relative so handle dots (pointer-events:none,
+           visual guides only) sit exactly over the canvas at any
+           display size. Display is toggled by style, not `hidden`:
+           .play-face's display:block would override the hidden
+           attribute's UA stylesheet. -->
+      <div id="play-warp-wrap" class="play-warp-wrap" style="display:none">
+        <canvas id="play-canvas" class="play-canvas" aria-label="The selected face, ready to pull by parts"></canvas>
+        <div id="play-handles" class="play-handles" aria-hidden="true"></div>
+      </div>
     </div>
+    <p id="landmark-status" class="hint" role="status">Finding face parts…</p>
     <!-- No role="status" here on purpose: this updates on every
          pointermove, and a live region would spam screen readers.
          The detection status above is the live region; this is visual only. -->
     <p class="play-readout"><span id="stretch-readout">1.0× × 1.0×</span> · <span id="stretch-best">Biggest stretch yet: 1.0×</span></p>
-    <p class="hint">Drag the face to stretch it — let go and it springs back. Same math as the jpl-dev avatar egg: 150px of drag is 1×, clamped to 0.5×–2×.</p>
+    <p class="hint">Whole-face mode: drag the face to stretch it — let go and it springs back. Same math as the jpl-dev avatar egg: 150px of drag is 1×, clamped to 0.5×–2×. Pull-parts mode: grab a dot (nose, chin, eyes, mouth, cheeks) or drag anywhere on the face to pull just that area.</p>
+    <div class="row">
+      <button id="pull-parts-btn" type="button" disabled>Pull face parts</button>
+      <button id="whole-face-btn" type="button" aria-pressed="true">Stretch whole face</button>
+    </div>
     <div class="row">
       <button id="pull-wide-btn" type="button">Pull wide</button>
       <button id="pull-tall-btn" type="button">Pull tall</button>
@@ -80,6 +95,7 @@
 <script src="js/config.js"></script>
 <script src="js/stretch.js"></script>
 <script src="js/face.js"></script>
+<script src="js/mesh.js"></script>
 <script src="js/detectors.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/app.js"></script>

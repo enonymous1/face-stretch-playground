@@ -103,13 +103,32 @@ python3 -m http.server 8000
 
 3. **Stretch it** — the selected face is cropped (with a 20% margin so
    forehead and chin come along) and shown on its own, Mario-style.
-   Drag to stretch, release to spring back. Stretch math is reused
-   from the jpl-dev avatar easter egg: 150px of drag is 1× of scale,
-   clamped to 0.5×–2×, with an overshoot spring on release.
-   `Pull wide` / `Pull tall` / `Squish` buttons and arrow keys do the
-   same thing without a pointer, and the spring is skipped under
-   `prefers-reduced-motion`. The boing is a tiny WebAudio synth —
-   no audio files — and can be toggled off.
+   There are two play modes, and whole-face is always available:
+
+   - **Stretch whole face (original mode):** drag to stretch, release
+     to spring back. Stretch math is reused from the jpl-dev avatar
+     easter egg: 150px of drag is 1× of scale, clamped to 0.5×–2×,
+     with an overshoot spring on release. `Pull wide` / `Pull tall` /
+     `Squish` buttons and arrow keys do the same thing without a
+     pointer.
+   - **Pull face parts (warp mode):** after the crop, MediaPipe Face
+     Landmarker finds 478 landmarks on the face (GPU first, CPU on
+     failure, model downloaded from CDN only for this mode). Those
+     points plus 8 fixed corner/edge anchors are triangulated with
+     Delaunay triangulation (`js/mesh.js`), and the photo is redrawn
+     triangle-by-triangle on a canvas. Grab a dot — nose, chin, eyes,
+     mouth, cheeks — or drag anywhere on the face: nearby mesh points
+     move with a smooth falloff, far points stay put, anchors never
+     move, so the background near the edges stays still. Release and
+     the mesh springs back with an overshoot ease. Arrow keys in this
+     mode pull the nose handle.
+
+   If landmarks fail (offline, model blocked, or no face in the
+   crop), warp mode stays disabled and whole-face mode is the play
+   mode — a missed landmark detection never blocks play, just like
+   a missed box detection never did. The spring is skipped under
+   `prefers-reduced-motion` in both modes. The boing is a tiny
+   WebAudio synth — no audio files — and can be toggled off.
 
 ### Project structure
 
@@ -119,7 +138,8 @@ styles.css                 Layout, box overlay, play-stage spring
 js/config.js               Every tunable number, in one place
 js/stretch.js              Drag -> scale math (pure, tested)
 js/face.js                 Normalized boxes + gesture math (pure, tested)
-js/detectors.js            Native / MediaPipe detection behind one contract
+js/mesh.js                 Delaunay + affine warp + falloff (pure, tested)
+js/detectors.js            Native / MediaPipe detection + landmarks behind one contract
 js/audio.js                WebAudio boing, with its context lifecycle
 js/app.js                  UI shell only: DOM, pointers, state
 tests/                     Node tests for the pure modules + load order
@@ -128,18 +148,19 @@ docs/architecture.svg      Diagram above
 
 Load order in `index.html` matters — classic scripts, no bundler —
 and `tests/load-order.test.js` guards it: config, stretch, face,
-detectors, audio, then app.
+mesh, detectors, audio, then app.
 
 ### Testing
 
 ```sh
-node --test tests/stretch.test.js tests/face.test.js tests/load-order.test.js
+node --test tests/stretch.test.js tests/face.test.js tests/mesh.test.js tests/load-order.test.js
 ```
 
-21 tests, all passing. They cover stretch math, box normalization,
-largest-face pick, crop math, move/resize/draw gestures, config
-sanity, script load order, and that every id `app.js` looks up exists
-in `index.html`.
+33 tests, all passing. They cover stretch math, box normalization,
+largest-face pick, crop math, move/resize/draw gestures, Delaunay
+triangulation (including the Delaunay property), affine warp math,
+falloff deformation, config sanity, script load order, and that
+every id `app.js` looks up exists in `index.html`.
 
 What they do **not** cover, honestly: `app.js` itself. It needs a
 browser (DOM, pointers, canvas, detectors), and there is no DOM test

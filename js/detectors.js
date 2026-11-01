@@ -120,6 +120,81 @@ async function detectFacesWithFallback(canvas, width, height) {
   }
 }
 
+// --- Face landmarks (warp mode) ---
+//
+// detectFaceLandmarks() is the second MediaPipe task, kept in this
+// file for the same reason as the box detector: app.js should not
+// know which model ran, only whether landmarks came back.
+// Landmarks are returned in canvas pixels (the task returns
+// normalized 0..1 coordinates, which are useless for geometry until
+// multiplied by width/height — a classic source of skewed distances
+// on non-square crops, so the conversion happens here, once).
+// Blendshapes and transformation matrices are off: the warp needs
+// only point positions, and turning them on would grow every result.
+//
+// Run on the face crop, not the full photo: the crop is the warp
+// canvas, so landmark pixels map 1:1 to warp coordinates with no
+// box-to-crop conversion step to get wrong.
+
+/**
+ * @typedef {Object} LandmarkResult
+ * @property {{x: number, y: number}[]} points - Pixel coordinates in the input canvas. Empty on failure/no-face.
+ * @property {string|null} error - Null on success-or-no-face, otherwise a user-facing reason.
+ */
+
+/**
+ * Run the Landmarker once with the given delegate.
+ * @param {Object} fileset
+ * @param {Object} vision
+ * @param {HTMLCanvasElement} canvas
+ * @param {'GPU'|'CPU'} delegate
+ * @returns {Promise<{x: number, y: number}[]>}
+ */
+async function detectLandmarksWithDelegate(fileset, vision, canvas, delegate) {
+  const modelUrl = (typeof FACE_STRETCH_CONFIG !== 'undefined' && FACE_STRETCH_CONFIG.faceLandmarkerModelUrl)
+    || 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+  const landmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: modelUrl, delegate },
+    runningMode: 'IMAGE',
+    numFaces: 1,
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: false,
+  });
+  try {
+    const result = landmarker.detect(canvas);
+    const face = (result.faceLandmarks || [])[0];
+    if (!face) return [];
+    return face.map((p) => ({ x: p.x * canvas.width, y: p.y * canvas.height }));
+  } finally {
+    landmarker.close();
+  }
+}
+
+/**
+ * @param {HTMLCanvasElement} canvas - The face crop canvas.
+ * @returns {Promise<LandmarkResult>} Never throws.
+ */
+async function detectFaceLandmarks(canvas) {
+  try {
+    const version = (typeof FACE_STRETCH_CONFIG !== 'undefined' && FACE_STRETCH_CONFIG.mediapipeVersion)
+      || '0.10.14';
+    const vision = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${version}/vision_bundle.mjs`);
+    const fileset = await getMediapipeFileset(vision);
+    let points;
+    try {
+      points = await detectLandmarksWithDelegate(fileset, vision, canvas, 'GPU');
+    } catch (err) {
+      points = await detectLandmarksWithDelegate(fileset, vision, canvas, 'CPU');
+    }
+    return { points, error: null };
+  } catch (err) {
+    return {
+      points: [],
+      error: 'Face parts could not be found (offline, or the landmark model download was blocked).',
+    };
+  }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { detectFacesWithFallback };
+  module.exports = { detectFacesWithFallback, detectFaceLandmarks };
 }

@@ -40,6 +40,15 @@ const FACE_STRETCH_CONFIG = {
   mediapipeVersion: '0.10.14',
   mediapipeModelUrl:
     'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+  // Face Landmarker model for the "pull parts" warp mode. Same
+  // tasks-vision version as above, so WASM and model stay in sync.
+  faceLandmarkerModelUrl:
+    'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+  // Warp pull radius, as a multiple of face width (landmark span).
+  // 0.8 means a nose pull still moves the near cheek at ~half
+  // strength, but the far side of the face barely moves — the
+  // difference between a local pull and a whole-face stretch.
+  landmarkPullRadiusFactor: 0.8,
   // Button/keyboard pull presets (scaleX, scaleY). Kept here, not in
   // app.js, so a preset change does not require hunting UI code.
   pullWide: { scaleX: 1.7, scaleY: 0.85 },

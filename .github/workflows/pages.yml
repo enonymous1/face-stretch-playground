@@ -43,7 +43,7 @@ jobs:
         with:
           node-version: 22
       - name: Gate on tests (do not publish a broken demo)
-        run: node --test tests/stretch.test.js tests/face.test.js tests/load-order.test.js
+        run: node --test tests/stretch.test.js tests/face.test.js tests/mesh.test.js tests/load-order.test.js
       - name: Stage site files only
         run: |
           mkdir -p site/js

@@ -4,7 +4,8 @@
 //   config.js    — every tunable number, in one place.
 //   stretch.js   — drag -> scale math (shared with jpl-dev).
 //   face.js      — normalized boxes + pure gesture math.
-//   detectors.js — native / MediaPipe detection behind one contract.
+//   mesh.js      — Delaunay triangulation + affine warp + falloff (pure).
+//   detectors.js — native / MediaPipe detection + landmarks behind one contract.
 //   audio.js     — the boing, with its AudioContext lifecycle.
 // What remains here is DOM wiring, pointer capture, and state — the
 // parts that genuinely need a browser. Nothing in here is unit-tested;
@@ -27,6 +28,12 @@
   const playBtn = $('play-btn');
   const nextFaceBtn = $('next-face-btn');
   const playFace = $('play-face');
+  const playCanvas = $('play-canvas');
+  const playWarpWrap = $('play-warp-wrap');
+  const playHandles = $('play-handles');
+  const landmarkStatus = $('landmark-status');
+  const pullPartsBtn = $('pull-parts-btn');
+  const wholeFaceBtn = $('whole-face-btn');
   const stretchReadout = $('stretch-readout');
   const stretchBest = $('stretch-best');
   const soundToggle = $('sound-toggle');
@@ -46,6 +53,7 @@
   const MOVE_THRESHOLD = cfg('moveThreshold', 0.005);
   const BOING_THRESHOLD = cfg('boingThreshold', 0.25);
   const JPEG_QUALITY = cfg('photoJpegQuality', 0.92);
+  const PULL_RADIUS_FACTOR = cfg('landmarkPullRadiusFactor', 0.8);
   /** Read a config object (pull presets) with a fallback. */
   function cfgObj(key, fallback) {
     try {
@@ -68,6 +76,19 @@
     best: 0,
     /** Bumped on every new photo; async detection checks it before applying results. */
     loadGeneration: 0,
+    /** Bumped on every Play; async landmark detection checks it before applying warp. */
+    playGeneration: 0,
+    /** 'whole' | 'warp'. Whole is always available; warp only after landmarks succeed. */
+    playMode: 'whole',
+  };
+
+  // Warp state, separate from the generic state above: it lives only
+  // for one play session and is rebuilt on every Play.
+  const warp = {
+    sourceCanvas: null, mesh: null, deformed: null, handles: [],
+    radius: 0, grabIndex: -1, dragging: false,
+    startCanvasX: 0, startCanvasY: 0, lastDragPx: 0,
+    rafPending: false, springRaf: 0, springTimeout: 0,
   };
 
   /**
@@ -326,6 +347,11 @@
    */
   async function startPlay() {
     if (state.boxes.length === 0) return;
+    const generation = ++state.playGeneration;
+    // Reset warp state: a stale mesh from a previous face must never
+    // warp a new face, even if its landmark request lands late.
+    warp.mesh = null; warp.deformed = null; warp.handles = [];
+    warp.dragging = false; cancelAnimationFrame(warp.springRaf);
     const expanded = expandBox(state.boxes[state.selected], CROP_PAD);
     const px = boxToPixels(expanded, state.width, state.height);
     const crop = document.createElement('canvas');
@@ -337,9 +363,209 @@
     state.best = 0;
     setStretch(1, 1);
     stretchBest.textContent = 'Biggest stretch yet: 1.0×';
+    setPlayMode('whole');
+    pullPartsBtn.disabled = true;
+    landmarkStatus.textContent = 'Finding face parts… (whole-face stretch works meanwhile)';
     show('play');
     playFace.focus({ preventScroll: true });
+    // Landmarks are progressive enhancement, not a gate: the user
+    // can already stretch the whole face while the model downloads.
+    // If landmarks fail, whole-face mode simply stays the mode —
+    // the same fallback principle as the manual box in step 2.
+    try {
+      const result = await detectFaceLandmarks(crop);
+      if (generation !== state.playGeneration) return;
+      if (result.error || result.points.length < 10) {
+        landmarkStatus.textContent = (result.error || 'Face parts not found — whole-face stretch is still available.');
+        return;
+      }
+      const mesh = buildWarpMesh(result.points, crop.width, crop.height);
+      if (!mesh) {
+        landmarkStatus.textContent = 'Face parts not found — whole-face stretch is still available.';
+        return;
+      }
+      warp.sourceCanvas = crop;
+      warp.mesh = mesh;
+      warp.deformed = mesh.points.map((p) => ({ ...p }));
+      warp.radius = Math.max(20, faceWidth(result.points) * PULL_RADIUS_FACTOR);
+      // Handles: named landmarks via the dedupe map, plus cheeks
+      // geometrically (leftmost/rightmost landmark, mapped the same way).
+      const cheeks = cheekIndices(result.points);
+      const handleDefs = FACE_HANDLES.map((h) => ({
+        label: h.label,
+        meshIndex: mesh.landmarkMap[h.landmarkIndex],
+      })).filter((h) => h.meshIndex !== undefined);
+      handleDefs.push(
+        { label: 'Left cheek', meshIndex: mesh.landmarkMap[cheeks.left] },
+        { label: 'Right cheek', meshIndex: mesh.landmarkMap[cheeks.right] },
+      );
+      warp.handles = handleDefs.filter((h) => h.meshIndex !== undefined);
+      pullPartsBtn.disabled = false;
+      landmarkStatus.textContent = 'Face parts found — tap “Pull face parts”, or grab the nose, chin, eyes, mouth, or cheeks.';
+      // Auto-switch to the mode the user just asked to build: they
+      // are not mid-drag yet (play just opened), so switching now
+      // is not an interruption. Whole-face stays one tap away.
+      if (!dragging) setPlayMode('warp');
+    } catch (err) {
+      if (generation !== state.playGeneration) return;
+      landmarkStatus.textContent = 'Face parts not found — whole-face stretch is still available.';
+    }
   }
+
+  // ---------- warp play mode ----------
+  /**
+   * Switch play modes. Display is toggled by style, not `hidden`
+   * (see the index.html comment: .play-face's display:block would
+   * override the hidden attribute). Focus follows the visible element.
+   * @param {'whole'|'warp'} mode
+   */
+  function setPlayMode(mode) {
+    if (mode === 'warp' && !warp.mesh) mode = 'whole';
+    state.playMode = mode;
+    playFace.style.display = mode === 'whole' ? '' : 'none';
+    playWarpWrap.style.display = mode === 'warp' ? '' : 'none';
+    pullPartsBtn.setAttribute('aria-pressed', String(mode === 'warp'));
+    wholeFaceBtn.setAttribute('aria-pressed', String(mode === 'whole'));
+    if (mode === 'warp') {
+      playCanvas.width = warp.sourceCanvas.width;
+      playCanvas.height = warp.sourceCanvas.height;
+      renderHandles();
+      renderWarp();
+      playCanvas.focus({ preventScroll: true });
+    } else {
+      playFace.focus({ preventScroll: true });
+    }
+  }
+
+  /** Pointer position in warp-canvas pixels (display size != canvas size). */
+  function warpCanvasPoint(e) {
+    const r = playCanvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (playCanvas.width / r.width),
+      y: (e.clientY - r.top) * (playCanvas.height / r.height),
+    };
+  }
+
+  /** Draw the current deformed mesh, throttled to one rAF per frame. */
+  function scheduleRenderWarp() {
+    if (warp.rafPending) return;
+    warp.rafPending = true;
+    requestAnimationFrame(() => {
+      warp.rafPending = false;
+      renderWarp();
+    });
+  }
+
+  function renderWarp() {
+    if (!warp.mesh) return;
+    const ctx = playCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, playCanvas.width, playCanvas.height);
+    drawWarped(ctx, warp.sourceCanvas, warp.mesh.points, warp.deformed, warp.mesh.triangles);
+    renderHandles();
+  }
+
+  /** Position handle dots over the deformed points. Dots are visual
+   * guides only (pointer-events:none in CSS): a drag always hits the
+   * canvas, and the nearest landmark becomes the grab point. */
+  function renderHandles() {
+    playHandles.innerHTML = '';
+    if (!warp.mesh || !warp.deformed) return;
+    warp.handles.forEach((h) => {
+      const p = warp.deformed[h.meshIndex];
+      if (!p) return;
+      const dot = document.createElement('span');
+      dot.className = 'play-handle';
+      dot.title = h.label;
+      dot.style.left = (p.x / playCanvas.width * 100) + '%';
+      dot.style.top = (p.y / playCanvas.height * 100) + '%';
+      playHandles.appendChild(dot);
+    });
+  }
+
+  /**
+   * Spring the deformed mesh back to rest over ~350ms with an
+   * overshoot ease, or instantly under prefers-reduced-motion.
+   * @param {Point[]} fromDeformed - Deformed points at release.
+   */
+  function animateWarpSpringBack(fromDeformed) {
+    cancelAnimationFrame(warp.springRaf);
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      warp.deformed = warp.mesh.points.map((p) => ({ ...p }));
+      renderWarp();
+      return;
+    }
+    const start = performance.now();
+    const duration = 350;
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const f = easeOutBack(t);
+      warp.deformed = warp.mesh.points.map((p, i) => ({
+        x: fromDeformed[i].x + (p.x - fromDeformed[i].x) * f,
+        y: fromDeformed[i].y + (p.y - fromDeformed[i].y) * f,
+      }));
+      renderWarp();
+      if (t < 1) warp.springRaf = requestAnimationFrame(step);
+      else warp.deformed = warp.mesh.points.map((p) => ({ ...p }));
+    };
+    warp.springRaf = requestAnimationFrame(step);
+  }
+
+  /** Pull one handle by (dx, dy) canvas pixels, then spring back (keyboard / preset pulls). */
+  function warpPullAndSpring(grabIndex, dx, dy) {
+    if (!warp.mesh) return;
+    cancelAnimationFrame(warp.springRaf);
+    clearTimeout(warp.springTimeout);
+    warp.deformed = deformPoints(warp.mesh.points, grabIndex, dx, dy, warp.radius, warp.mesh.anchorIndices);
+    renderWarp();
+    warp.springTimeout = setTimeout(() => animateWarpSpringBack(warp.deformed), 220);
+    playBoing(soundToggle.checked);
+  }
+
+  playCanvas.tabIndex = 0;
+  playCanvas.addEventListener('pointerdown', (e) => {
+    if (!warp.mesh) return;
+    cancelAnimationFrame(warp.springRaf);
+    clearTimeout(warp.springTimeout);
+    const p = warpCanvasPoint(e);
+    // Nearest landmark is the grab — no need to hit a 14px dot
+    // exactly, which would be fiddly on a phone. Anchors (corners)
+    // are excluded: pulling a corner would drag the background.
+    warp.grabIndex = findNearestPoint(warp.mesh.points, p.x, p.y, warp.mesh.anchorIndices);
+    if (warp.grabIndex < 0) return;
+    warp.dragging = true;
+    warp.startCanvasX = p.x; warp.startCanvasY = p.y; warp.lastDragPx = 0;
+    try { playCanvas.setPointerCapture(e.pointerId); } catch (err) { /* synthetic */ }
+  });
+  playCanvas.addEventListener('pointermove', (e) => {
+    if (!warp.dragging) return;
+    const p = warpCanvasPoint(e);
+    const dx = p.x - warp.startCanvasX, dy = p.y - warp.startCanvasY;
+    warp.lastDragPx = Math.hypot(dx, dy);
+    warp.deformed = deformPoints(warp.mesh.points, warp.grabIndex, dx, dy, warp.radius, warp.mesh.anchorIndices);
+    scheduleRenderWarp();
+  });
+  function endWarpDrag() {
+    if (!warp.dragging) return;
+    warp.dragging = false;
+    const from = warp.deformed;
+    animateWarpSpringBack(from);
+    if (warp.lastDragPx > 40) playBoing(soundToggle.checked);
+  }
+  playCanvas.addEventListener('pointerup', endWarpDrag);
+  playCanvas.addEventListener('pointercancel', endWarpDrag);
+  playCanvas.addEventListener('keydown', (e) => {
+    // Keyboard pull in warp mode: arrow keys pull the nose handle.
+    // Whole-face arrow pulls live on the img; this is the warp equivalent.
+    if (!warp.mesh) return;
+    const nose = warp.handles.find((h) => h.label === 'Nose');
+    if (!nose) return;
+    const step = warp.radius * 0.35;
+    if (e.key === 'ArrowRight') { e.preventDefault(); warpPullAndSpring(nose.meshIndex, step, 0); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); warpPullAndSpring(nose.meshIndex, -step, 0); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); warpPullAndSpring(nose.meshIndex, 0, step); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); warpPullAndSpring(nose.meshIndex, 0, -step); }
+  });
 
   /**
    * Apply a stretch and update the readout + best-stretch meter.
@@ -428,7 +654,15 @@
   $('new-photo-btn').addEventListener('click', () => show('upload'));
   $('back-to-pick-btn').addEventListener('click', () => show('pick'));
   $('play-new-photo-btn').addEventListener('click', () => show('upload'));
-  $('pull-wide-btn').addEventListener('click', () => animatePull(PULL_WIDE.scaleX, PULL_WIDE.scaleY));
-  $('pull-tall-btn').addEventListener('click', () => animatePull(PULL_TALL.scaleX, PULL_TALL.scaleY));
-  $('squish-btn').addEventListener('click', () => animatePull(PULL_SQUISH.scaleX, PULL_SQUISH.scaleY));
+  pullPartsBtn.addEventListener('click', () => setPlayMode('warp'));
+  wholeFaceBtn.addEventListener('click', () => setPlayMode('whole'));
+  // Pull wide/tall/squish are whole-face presets: in warp mode they
+  // switch back first, rather than doing a confusing half-warp.
+  function wholePull(sx, sy) {
+    if (state.playMode === 'warp') setPlayMode('whole');
+    animatePull(sx, sy);
+  }
+  $('pull-wide-btn').addEventListener('click', () => wholePull(PULL_WIDE.scaleX, PULL_WIDE.scaleY));
+  $('pull-tall-btn').addEventListener('click', () => wholePull(PULL_TALL.scaleX, PULL_TALL.scaleY));
+  $('squish-btn').addEventListener('click', () => wholePull(PULL_SQUISH.scaleX, PULL_SQUISH.scaleY));
 })();

@@ -108,6 +108,30 @@ button[aria-pressed="true"] { background: #222; color: #fff; }
 }
 .play-face:active { cursor: grabbing; }
 .play-face.is-springing { transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+/* Warp mode: canvas replaces the img, same stage size. Handles are
+   visual guides only (pointer-events:none in .play-handles), so a
+   drag always hits the canvas and the nearest landmark is the grab. */
+.play-warp-wrap { position: relative; width: min(320px, 80vw); margin: 0 auto; }
+.play-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+.play-canvas:active { cursor: grabbing; }
+.play-handles { position: absolute; inset: 0; pointer-events: none; }
+.play-handle {
+  position: absolute;
+  width: 14px; height: 14px;
+  margin: -7px 0 0 -7px;
+  background: #ff4d2e;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.2);
+}
 .play-readout { font-variant-numeric: tabular-nums; }
 .sound-toggle { display: inline-flex; gap: 6px; align-items: center; }
 

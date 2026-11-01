@@ -15,8 +15,9 @@ jobs:
           node --check js/config.js
           node --check js/stretch.js
           node --check js/face.js
+          node --check js/mesh.js
           node --check js/detectors.js
           node --check js/audio.js
           node --check js/app.js
       - name: Run tests
-        run: node --test tests/stretch.test.js tests/face.test.js tests/load-order.test.js
+        run: node --test tests/stretch.test.js tests/face.test.js tests/mesh.test.js tests/load-order.test.js
