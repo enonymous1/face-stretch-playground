@@ -1,0 +1,19 @@
+name: Tests
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax-check JS
+        run: |
+          node --check js/stretch.js
+          node --check js/face.js
+          node --check js/app.js
+      - name: Run tests
+        run: node --test tests/stretch.test.js tests/face.test.js
