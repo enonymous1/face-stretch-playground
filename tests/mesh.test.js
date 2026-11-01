@@ -103,8 +103,13 @@ test('drawWarped calls drawImage once per non-degenerate triangle with a correct
   drawWarped(ctx, {}, rest, deformed, [[0, 1, 2]]);
   const transform = calls.find((c) => !c.draw);
   assert.ok(transform);
-  // The transform must map deformed -> rest.
-  assertPointClose(applyAffine(transform, deformed[1]), rest[1]);
+  // Regression test for the backwards-pull bug (2026-11-01): the
+  // transform drawWarped hands to canvas must map rest -> deformed,
+  // because drawImage pushes source pixels forward through it.
+  // The old test asserted the inverse (deformed -> rest) and passed
+  // while pulls visibly went the wrong way in the browser.
+  assertPointClose(applyAffine(transform, rest[1]), deformed[1]);
+  assertPointClose(applyAffine(transform, rest[2]), deformed[2]);
   assert.ok(calls.some((c) => c.draw));
 });
 test('findNearestPoint excludes anchors', () => {

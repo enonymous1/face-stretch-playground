@@ -14,7 +14,13 @@
 //        smooth falloff, anchors never move
 //     -> drawWarped(): for each triangle, clip to the deformed
 //        triangle and draw the source triangle into it via an
-//        affine transform (deformed -> rest).
+//        affine transform (rest -> deformed). See drawWarped's
+//        comment: canvas drawImage pushes source pixels forward
+//        through the transform, so the forward direction is the
+//        only one that lands the texture on the deformed triangle.
+//        The inverse (deformed -> rest) is the sampling direction
+//        for a per-pixel shader, not for drawImage — using it here
+//        made pulls appear to go in the opposite direction.
 //
 // Why Delaunay, not a grid: a grid warp does not know where the
 // nose ends and the cheek begins, so a "nose pull" would smear a
@@ -297,8 +303,20 @@ function buildWarpMesh(landmarkPoints, width, height) {
  * Draw a warped source canvas into a context, triangle by triangle.
  * The caller clears the context first. Each triangle is clipped to
  * its deformed shape, then the source is drawn through the affine
- * transform that maps deformed -> rest, so the source triangle
- * lands exactly on the deformed triangle.
+ * transform that maps rest -> deformed.
+ *
+ * Why forward, not inverse: drawImage places the source image at
+ * its own (rest) coordinates, then the current transform moves
+ * those coordinates to the destination. A rest->deformed transform
+ * therefore lands the rest triangle exactly on the deformed
+ * triangle. The deformed->rest transform is what a per-pixel
+ * sampler would use (destination pixel -> source pixel), but
+ * canvas is not a sampler: feeding it the inverse transform moves
+ * the texture the opposite way from the deformed mesh, which is
+ * exactly the "pull goes backwards" bug. The clip is defined in
+ * identity space (deformed triangle), so changing the transform
+ * after clip() does not move the clip — the drawn, transformed
+ * triangle is clipped to the deformed triangle in device space.
  * @param {CanvasRenderingContext2D} ctx
  * @param {HTMLCanvasElement} sourceCanvas
  * @param {Point[]} restPoints
@@ -311,7 +329,7 @@ function drawWarped(ctx, sourceCanvas, restPoints, deformedPoints, triangles) {
     const src = [restPoints[tri[0]], restPoints[tri[1]], restPoints[tri[2]]];
     if (!dst[0] || !dst[1] || !dst[2] || !src[0] || !src[1] || !src[2]) return;
     if (Math.abs(triangleArea2(dst[0], dst[1], dst[2])) < 0.01) return;
-    const m = computeAffineTransform(dst, src);
+    const m = computeAffineTransform(src, dst);
     if (!m) return;
     ctx.save();
     ctx.beginPath();
