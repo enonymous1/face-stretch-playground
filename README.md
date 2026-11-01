@@ -140,6 +140,24 @@ python3 -m http.server 8000
    across a reload: the photo itself is never saved, so there is
    nothing to restore a stretch onto.
 
+### Dark mode and anchors
+
+- **Dark mode is theme-aware:** with no stored choice, the page
+  follows your system (`prefers-color-scheme`), light or dark, with
+  no flash on load. The header button toggles dark/light and stores
+  that choice in `localStorage` (`face-stretch-theme`) — only the
+  theme choice is stored, never the photo. A stored choice beats the
+  system until you toggle again.
+- **Anchors (warp mode):** the Anchors menu defaults to
+  `Hover (faint)` — dots are hidden until you hover or focus the
+  face, then appear faintly, and stay faint while dragging, so they
+  don’t cover the face you’re pulling. `Always` shows them at full
+  opacity, `Hidden` removes them entirely (grabbing still works by
+  dragging anywhere, since the grab is the nearest landmark). On
+  touch devices, where there is no hover, Hover mode shows faint
+  dots always instead. The choice is stored in `localStorage`
+  (`face-stretch-anchors`).
+
 ### Project structure
 
 ```text

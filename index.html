@@ -5,14 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Face Stretch Playground</title>
 <meta name="description" content="Upload a photo, find a face in it, and stretch it like the Mario 64 title screen. Everything runs in your browser; your photo never leaves this device.">
+<!-- Apply a stored theme before the stylesheet loads, so the page
+     does not flash light on a dark system (or vice versa) on first
+     paint. No stored theme = no class = the media query decides. -->
+<script>try { var t = localStorage.getItem('face-stretch-theme'); if (t === 'dark') document.documentElement.classList.add('dark'); else if (t === 'light') document.documentElement.classList.add('light'); } catch (e) {}</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <main>
-  <header>
-    <h1>Face Stretch Playground</h1>
-    <p class="tagline">Upload a photo. Find a face. Pull it around like the Mario&nbsp;64 title screen, then let go and watch it spring back.</p>
-    <p class="privacy">No server, no upload, no account. Detection runs on-device when your browser supports it; your photo never leaves this page.</p>
+  <header class="site-header">
+    <div>
+      <h1>Face Stretch Playground</h1>
+      <p class="tagline">Upload a photo. Find a face. Pull it around like the Mario&nbsp;64 title screen, then let go and watch it spring back.</p>
+      <p class="privacy">No server, no upload, no account. Detection runs on-device when your browser supports it; your photo never leaves this page.</p>
+    </div>
+    <button id="theme-toggle" type="button" class="theme-toggle" aria-label="Switch to dark mode">🌙 Dark mode</button>
   </header>
 
   <!-- Step 1: photo -->
@@ -58,7 +65,7 @@
            display size. Display is toggled by style, not `hidden`:
            .play-face's display:block would override the hidden
            attribute's UA stylesheet. -->
-      <div id="play-warp-wrap" class="play-warp-wrap" style="display:none">
+      <div id="play-warp-wrap" class="play-warp-wrap" data-anchor-mode="hover" style="display:none">
         <canvas id="play-canvas" class="play-canvas" aria-label="The selected face, ready to pull by parts"></canvas>
         <div id="play-handles" class="play-handles" aria-hidden="true"></div>
       </div>
@@ -68,10 +75,17 @@
          pointermove, and a live region would spam screen readers.
          The detection status above is the live region; this is visual only. -->
     <p class="play-readout"><span id="stretch-readout">1.0× × 1.0×</span> · <span id="stretch-best">Biggest stretch yet: 1.0×</span></p>
-    <p class="hint">Whole-face mode: drag the face to stretch it. Same math as the jpl-dev avatar egg: 150px of drag is 1×, clamped to 0.5×–2×. Pull-parts mode: grab a dot (nose, chin, eyes, mouth, cheeks) or drag anywhere on the face to pull just that area. Hold stretch is on by default: a pull stays where you left it — drag again to pull further, and tap Reset face to go back to the original. Uncheck Hold stretch and pulls spring back on release, as before.</p>
+    <p class="hint">Whole-face mode: drag the face to stretch it. Same math as the jpl-dev avatar egg: 150px of drag is 1×, clamped to 0.5×–2×. Pull-parts mode: grab a dot (nose, chin, eyes, mouth, cheeks) or drag anywhere on the face to pull just that area. Hold stretch is on by default: a pull stays where you left it — drag again to pull further, and tap Reset face to go back to the original. Uncheck Hold stretch and pulls spring back on release, as before. Anchors are faint on hover by default, so they don’t cover the face; use the Anchors menu to show them always or hide them entirely.</p>
     <div class="row">
       <button id="pull-parts-btn" type="button" disabled>Pull face parts</button>
       <button id="whole-face-btn" type="button" aria-pressed="true">Stretch whole face</button>
+      <label class="anchor-control">Anchors:
+        <select id="anchor-mode" aria-label="Face part anchor visibility">
+          <option value="hover" selected>Hover (faint)</option>
+          <option value="always">Always</option>
+          <option value="hidden">Hidden</option>
+        </select>
+      </label>
     </div>
     <div class="row">
       <button id="pull-wide-btn" type="button">Pull wide</button>

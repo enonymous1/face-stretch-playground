@@ -39,6 +39,8 @@
   const soundToggle = $('sound-toggle');
   const holdToggle = $('hold-toggle');
   const resetFaceBtn = $('reset-face-btn');
+  const themeToggle = $('theme-toggle');
+  const anchorModeSelect = $('anchor-mode');
 
   /** Read a config number with a fallback, so app.js still works if config.js is missing. */
   function cfg(key, fallback) {
@@ -96,6 +98,61 @@
     startCanvasX: 0, startCanvasY: 0, lastDragPx: 0,
     rafPending: false, springRaf: 0, springTimeout: 0,
   };
+
+  // ---------- theme ----------
+  // Stored theme beats the system; no stored theme means the
+  // prefers-color-scheme media query decides, and a system change
+  // while the page is open follows automatically (CSS only). The
+  // pre-boot script in index.html already applied a stored theme
+  // before first paint; this section only keeps the button label
+  // in sync and handles toggles. localStorage is best-effort:
+  // file:// and private modes may refuse it, and the theme still
+  // works for the session in that case.
+  function storedTheme() {
+    try { const t = localStorage.getItem('face-stretch-theme'); return (t === 'dark' || t === 'light') ? t : null; } catch (err) { return null; }
+  }
+  function systemTheme() {
+    try { return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; } catch (err) { return 'light'; }
+  }
+  function effectiveTheme() { return storedTheme() || systemTheme(); }
+  function updateThemeButton(theme) {
+    if (!themeToggle) return;
+    if (theme === 'dark') {
+      themeToggle.textContent = '☀️ Light mode';
+      themeToggle.setAttribute('aria-label', 'Switch to light mode');
+    } else {
+      themeToggle.textContent = '🌙 Dark mode';
+      themeToggle.setAttribute('aria-label', 'Switch to dark mode');
+    }
+  }
+  function applyThemeClass(theme) {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.classList.toggle('light', theme === 'light');
+  }
+  // Initial label only: if a theme is stored, the pre-boot script
+  // already applied its class; if not, no class is added here, so
+  // the media query stays in charge.
+  updateThemeButton(effectiveTheme());
+  try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if (!storedTheme()) updateThemeButton(systemTheme());
+    });
+  } catch (err) { /* matchMedia listener is optional */ }
+
+  // ---------- anchor visibility ----------
+  // Default is hover (faint), per the request: dots should not
+  // cover the face by default, but must be findable on hover.
+  // Persisted like the theme; a stored value wins over the HTML default.
+  function applyAnchorMode(mode) {
+    if (!['always', 'hover', 'hidden'].includes(mode)) mode = 'hover';
+    if (playWarpWrap) playWarpWrap.dataset.anchorMode = mode;
+    if (anchorModeSelect) anchorModeSelect.value = mode;
+    try { localStorage.setItem('face-stretch-anchors', mode); } catch (err) { /* best-effort */ }
+  }
+  try {
+    const storedAnchors = localStorage.getItem('face-stretch-anchors');
+    if (storedAnchors) applyAnchorMode(storedAnchors);
+  } catch (err) { /* best-effort */ }
 
   /**
    * Show exactly one of the three steps.
@@ -555,6 +612,7 @@
     warp.grabIndex = findNearestPoint(warp.mesh.points, p.x, p.y, warp.mesh.anchorIndices);
     if (warp.grabIndex < 0) return;
     warp.dragging = true;
+    playWarpWrap.classList.add('is-dragging');
     warp.startCanvasX = p.x; warp.startCanvasY = p.y; warp.lastDragPx = 0;
     try { playCanvas.setPointerCapture(e.pointerId); } catch (err) { /* synthetic */ }
   });
@@ -569,6 +627,7 @@
   function endWarpDrag() {
     if (!warp.dragging) return;
     warp.dragging = false;
+    playWarpWrap.classList.remove('is-dragging');
     if (holdToggle.checked) {
       // Hold is the point of this mode: the pull stays, and the
       // next drag starts from it (basePoints, snapshotted at
@@ -620,6 +679,7 @@
     cancelAnimationFrame(warp.springRaf);
     clearTimeout(warp.springTimeout);
     warp.dragging = false; dragging = false;
+    if (playWarpWrap) playWarpWrap.classList.remove('is-dragging');
     playFace.classList.remove('is-springing');
     state.best = 0;
     setStretch(1, 1);
@@ -717,6 +777,13 @@
   pullPartsBtn.addEventListener('click', () => setPlayMode('warp'));
   wholeFaceBtn.addEventListener('click', () => setPlayMode('whole'));
   resetFaceBtn.addEventListener('click', () => resetFace());
+  themeToggle.addEventListener('click', () => {
+    const next = effectiveTheme() === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('face-stretch-theme', next); } catch (err) { /* best-effort */ }
+    applyThemeClass(next);
+    updateThemeButton(next);
+  });
+  anchorModeSelect.addEventListener('change', () => applyAnchorMode(anchorModeSelect.value));
   // Pull wide/tall/squish are whole-face presets: in warp mode they
   // switch back first, rather than doing a confusing half-warp.
   function wholePull(sx, sy) {

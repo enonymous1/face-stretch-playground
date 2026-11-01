@@ -1,57 +1,151 @@
+/* Theme variables: light is the default, dark follows the system
+   (prefers-color-scheme), and html.dark / html.light override the
+   system when the user toggles the theme button. The html rules
+   must come after the media query and must stay in sync with it —
+   otherwise a manual toggle would not beat the system choice.
+   Photos, face boxes, and the play stage are not themed: a photo
+   must look like the photo, and the stage is already dark. */
+:root {
+  --bg: #f4f2ec;
+  --text: #222;
+  --muted: #555;
+  --surface: #fff;
+  --border: #ddd;
+  --button-border: #bbb;
+  --button-bg: #fff;
+  --button-hover: #f0eee8;
+  --primary-bg: #222;
+  --primary-text: #fff;
+  --primary-hover: #444;
+  --dropzone-hover-bg: #f9f7f0;
+  --row-border: #eee;
+  --error: #a00;
+  --focus: #222;
+  --shadow: rgba(0,0,0,0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161c;
+    --text: #e8e6e1;
+    --muted: #a8a5a0;
+    --surface: #1e212b;
+    --border: #333646;
+    --button-border: #44475a;
+    --button-bg: #242736;
+    --button-hover: #2e3247;
+    --primary-bg: #e8e6e1;
+    --primary-text: #14161c;
+    --primary-hover: #ffffff;
+    --dropzone-hover-bg: #242736;
+    --row-border: #333646;
+    --error: #ff8a7a;
+    --focus: #ffd23f;
+    --shadow: rgba(0,0,0,0.4);
+  }
+}
+html.dark {
+  --bg: #14161c;
+  --text: #e8e6e1;
+  --muted: #a8a5a0;
+  --surface: #1e212b;
+  --border: #333646;
+  --button-border: #44475a;
+  --button-bg: #242736;
+  --button-hover: #2e3247;
+  --primary-bg: #e8e6e1;
+  --primary-text: #14161c;
+  --primary-hover: #ffffff;
+  --dropzone-hover-bg: #242736;
+  --row-border: #333646;
+  --error: #ff8a7a;
+  --focus: #ffd23f;
+  --shadow: rgba(0,0,0,0.4);
+}
+html.light {
+  --bg: #f4f2ec;
+  --text: #222;
+  --muted: #555;
+  --surface: #fff;
+  --border: #ddd;
+  --button-border: #bbb;
+  --button-bg: #fff;
+  --button-hover: #f0eee8;
+  --primary-bg: #222;
+  --primary-text: #fff;
+  --primary-hover: #444;
+  --dropzone-hover-bg: #f9f7f0;
+  --row-border: #eee;
+  --error: #a00;
+  --focus: #222;
+  --shadow: rgba(0,0,0,0.06);
+}
 * { box-sizing: border-box; }
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: #f4f2ec;
-  color: #222;
+  background: var(--bg);
+  color: var(--text);
   line-height: 1.5;
 }
 main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+.site-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.site-header > div { flex: 1 1 320px; }
+.theme-toggle { flex-shrink: 0; margin-top: 4px; }
 h1 { margin: 0 0 8px; font-size: 2rem; }
 h2 { margin: 0 0 12px; font-size: 1.25rem; }
 .tagline { font-size: 1.1rem; margin: 0 0 8px; }
-.privacy, .small { font-size: 0.9rem; color: #555; }
+.privacy, .small { font-size: 0.9rem; color: var(--muted); }
 .card {
-  background: #fff;
-  border: 1px solid #ddd;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 20px;
   padding: 20px;
   margin-top: 20px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 10px var(--shadow);
 }
 button {
   font: inherit;
   padding: 10px 16px;
   border-radius: 999px;
-  border: 1px solid #bbb;
-  background: #fff;
+  border: 1px solid var(--button-border);
+  background: var(--button-bg);
+  color: var(--text);
   cursor: pointer;
 }
-button:hover { background: #f0eee8; }
+button:hover { background: var(--button-hover); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* No focus style existed before: keyboard users could not tell which
    control was focused. :focus-visible keeps mouse users clean. */
-button:focus-visible, .dropzone:focus-visible, .play-face:focus-visible {
-  outline: 3px solid #222;
+button:focus-visible, .dropzone:focus-visible, .play-face:focus-visible, .play-canvas:focus-visible, select:focus-visible {
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
-button.primary { background: #222; color: #fff; border-color: #222; }
-button.primary:hover { background: #444; }
-button[aria-pressed="true"] { background: #222; color: #fff; }
+button.primary { background: var(--primary-bg); color: var(--primary-text); border-color: var(--primary-bg); }
+button.primary:hover { background: var(--primary-hover); }
+button[aria-pressed="true"] { background: var(--primary-bg); color: var(--primary-text); }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
-.primary-row { border-top: 1px solid #eee; padding-top: 14px; }
-.error { color: #a00; }
-.hint { color: #555; }
+.primary-row { border-top: 1px solid var(--row-border); padding-top: 14px; }
+.error { color: var(--error); }
+.hint { color: var(--muted); }
+select {
+  font: inherit;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--button-border);
+  background: var(--button-bg);
+  color: var(--text);
+}
+.anchor-control { display: inline-flex; gap: 6px; align-items: center; }
 
 /* Upload */
 .dropzone {
-  border: 2px dashed #bbb;
+  border: 2px dashed var(--button-border);
   border-radius: 16px;
   padding: 28px 20px;
   text-align: center;
   cursor: pointer;
 }
-.dropzone.drag-over { border-color: #222; background: #f9f7f0; }
+.dropzone.drag-over { border-color: var(--focus); background: var(--dropzone-hover-bg); }
 
 /* Pick stage: the photo sets the size, boxes sit on top in %. */
 .photo-stage {
@@ -131,6 +225,27 @@ button[aria-pressed="true"] { background: #222; color: #fff; }
   border: 2px solid #fff;
   border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(0,0,0,0.2);
+  transition: opacity 0.2s;
+}
+/* Anchor visibility, driven by data-anchor-mode on the wrap
+   (set from the Anchors menu, persisted in localStorage):
+   - always: dots at full opacity, as before.
+   - hover (default): dots hidden until the wrap is hovered or
+     focused, then faint (0.45) — enough to find a grab point
+     without covering the face. While dragging, the same faint
+     level applies, so the grabbed dot stays trackable.
+   - hidden: no dots at all; grabbing still works by dragging
+     anywhere, since the grab is the nearest landmark.
+   Touch devices have no hover, so hover mode shows faint dots
+   always there — otherwise touch users would never see a dot. */
+.play-warp-wrap[data-anchor-mode="always"] .play-handle { opacity: 1; }
+.play-warp-wrap[data-anchor-mode="hover"] .play-handle { opacity: 0; }
+.play-warp-wrap[data-anchor-mode="hover"]:hover .play-handle,
+.play-warp-wrap[data-anchor-mode="hover"]:focus-within .play-handle,
+.play-warp-wrap[data-anchor-mode="hover"].is-dragging .play-handle { opacity: 0.45; }
+.play-warp-wrap[data-anchor-mode="hidden"] .play-handle { display: none; }
+@media (hover: none) {
+  .play-warp-wrap[data-anchor-mode="hover"] .play-handle { opacity: 0.45; }
 }
 .play-readout { font-variant-numeric: tabular-nums; }
 .sound-toggle { display: inline-flex; gap: 6px; align-items: center; }
