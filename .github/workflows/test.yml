@@ -12,8 +12,11 @@ jobs:
           node-version: 22
       - name: Syntax-check JS
         run: |
+          node --check js/config.js
           node --check js/stretch.js
           node --check js/face.js
+          node --check js/detectors.js
+          node --check js/audio.js
           node --check js/app.js
       - name: Run tests
-        run: node --test tests/stretch.test.js tests/face.test.js
+        run: node --test tests/stretch.test.js tests/face.test.js tests/load-order.test.js

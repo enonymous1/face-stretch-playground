@@ -1,9 +1,15 @@
 // Face Stretch Playground: upload -> detect (or draw) a face -> stretch it.
-// Detection order is deliberate: (1) the browser's built-in
-// FaceDetector when present (Chrome/Edge, no download, no network),
-// (2) MediaPipe BlazeFace Short Range via CDN, loaded only then,
-// (3) manual box, which always works. The photo is never uploaded:
-// detection and cropping both run on bitmaps held in this page.
+//
+// This file is the UI shell only. The testable logic lives elsewhere:
+//   config.js    — every tunable number, in one place.
+//   stretch.js   — drag -> scale math (shared with jpl-dev).
+//   face.js      — normalized boxes + pure gesture math.
+//   detectors.js — native / MediaPipe detection behind one contract.
+//   audio.js     — the boing, with its AudioContext lifecycle.
+// What remains here is DOM wiring, pointer capture, and state — the
+// parts that genuinely need a browser. Nothing in here is unit-tested;
+// that is a known gap (see README, "Testing"), and the reason the
+// pure helpers were extracted instead of tested through the DOM.
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -18,111 +24,196 @@
   const photoImg = $('photo-img');
   const boxesEl = $('boxes');
   const pickHint = $('pick-hint');
+  const playBtn = $('play-btn');
+  const nextFaceBtn = $('next-face-btn');
   const playFace = $('play-face');
   const stretchReadout = $('stretch-readout');
   const stretchBest = $('stretch-best');
+  const soundToggle = $('sound-toggle');
+
+  /** Read a config number with a fallback, so app.js still works if config.js is missing. */
+  function cfg(key, fallback) {
+    try {
+      if (typeof FACE_STRETCH_CONFIG !== 'undefined' && typeof FACE_STRETCH_CONFIG[key] === 'number') {
+        return FACE_STRETCH_CONFIG[key];
+      }
+    } catch (err) { /* config is optional */ }
+    return fallback;
+  }
+  const MAX_WORKING_SIZE = cfg('maxWorkingSize', 1600);
+  const CROP_PAD = cfg('cropPad', 0.2);
+  const DRAW_DISCARD = cfg('drawDiscardThreshold', 0.02);
+  const MOVE_THRESHOLD = cfg('moveThreshold', 0.005);
+  const BOING_THRESHOLD = cfg('boingThreshold', 0.25);
+  const JPEG_QUALITY = cfg('photoJpegQuality', 0.92);
+  /** Read a config object (pull presets) with a fallback. */
+  function cfgObj(key, fallback) {
+    try {
+      if (typeof FACE_STRETCH_CONFIG !== 'undefined' && FACE_STRETCH_CONFIG[key]) {
+        return FACE_STRETCH_CONFIG[key];
+      }
+    } catch (err) { /* config is optional */ }
+    return fallback;
+  }
+  const PULL_WIDE = cfgObj('pullWide', { scaleX: 1.7, scaleY: 0.85 });
+  const PULL_TALL = cfgObj('pullTall', { scaleX: 0.85, scaleY: 1.7 });
+  const PULL_SQUISH = cfgObj('pullSquish', { scaleX: 0.6, scaleY: 0.6 });
+
+  const playBoing = createBoingPlayer();
 
   const state = {
-    bitmap: null, canvas: null, width: 0, height: 0,
+    canvas: null, width: 0, height: 0,
     boxes: [], selected: 0, drawMode: false,
     photoUrl: null, playUrl: null,
-    best: 0, audio: null,
+    best: 0,
+    /** Bumped on every new photo; async detection checks it before applying results. */
+    loadGeneration: 0,
   };
 
+  /**
+   * Show exactly one of the three steps.
+   * @param {'upload'|'pick'|'play'} section
+   */
   function show(section) {
     uploadSection.hidden = section !== 'upload';
     pickSection.hidden = section !== 'pick';
     playSection.hidden = section !== 'play';
   }
+
+  /** @param {import('./face.js').Box} box @returns {{left:number,top:number,width:number,height:number}} Percentages for CSS. */
   function pct(box) {
     return { left: box.x * 100, top: box.y * 100, width: box.width * 100, height: box.height * 100 };
   }
-  function stageFraction(e) {
-    const r = photoStage.getBoundingClientRect();
+
+  /**
+   * Pointer position as a fraction of the photo stage.
+   * @param {PointerEvent} e
+   * @param {DOMRect} [rect] - Cached stage rect; when omitted, measured fresh.
+   *   During a drag the rect is cached on pointerdown: measuring on
+   *   every move forces layout and, combined with a DOM rebuild, was
+   *   the main pointermove cost in the original code.
+   */
+  function stageFraction(e, rect) {
+    const r = rect || photoStage.getBoundingClientRect();
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   }
 
+  /**
+   * Canvas -> object URL, rejecting when encoding fails (toBlob can
+   * return null for an oversized or tainted canvas — previously this
+   * threw an opaque error inside URL.createObjectURL).
+   * @param {HTMLCanvasElement} canvas
+   * @param {string} type
+   * @param {number} [quality]
+   * @returns {Promise<string>}
+   */
+  function canvasToObjectUrl(canvas, type, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) reject(new Error('Could not encode the photo.'));
+        else resolve(URL.createObjectURL(blob));
+      }, type, quality);
+    });
+  }
+
   // ---------- photo loading ----------
+  /**
+   * Load a photo file into the working canvas and start detection.
+   * The working copy is capped at MAX_WORKING_SIZE: detection is
+   * faster, and the play face is only shown at 320px, so a larger
+   * copy buys nothing. The full-resolution bitmap is closed as soon
+   * as the downscaled copy exists — the original code kept it alive
+   * for the life of the page, doubling peak memory on phone photos.
+   * @param {File|null} file
+   * @returns {Promise<void>}
+   */
   async function loadPhoto(file) {
+    // Reset the picker now, not after load: otherwise picking the
+    // same file twice fires no `change` event and the second pick
+    // silently does nothing (a real bug in the original code).
+    fileInput.value = '';
     if (!file || !file.type.startsWith('image/')) {
       uploadError.textContent = 'That was not an image file. Try a JPG, PNG, or WebP photo.';
       uploadError.hidden = false;
       return;
     }
     uploadError.hidden = true;
-    let bitmap;
+    const generation = ++state.loadGeneration;
     try {
-      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      let bitmap;
+      try {
+        bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      } catch (err) {
+        // Older browsers reject the options object; retry plain.
+        bitmap = await createImageBitmap(file);
+      }
+      // If the user dropped a second photo while the first was still
+      // decoding, the first load must not overwrite the second.
+      if (generation !== state.loadGeneration) { if (bitmap.close) bitmap.close(); return; }
+      const scale = Math.min(1, MAX_WORKING_SIZE / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      if (bitmap.close) bitmap.close();
+      if (state.photoUrl) URL.revokeObjectURL(state.photoUrl);
+      // JPEG, not PNG: photos have no alpha, and PNG blobs were
+      // several times larger for no visual gain.
+      state.photoUrl = await canvasToObjectUrl(canvas, 'image/jpeg', JPEG_QUALITY);
+      state.canvas = canvas;
+      state.width = canvas.width;
+      state.height = canvas.height;
+      state.boxes = [];
+      state.selected = 0;
+      setDrawMode(false);
+      photoImg.src = state.photoUrl;
+      show('pick');
+      detectStatus.textContent = 'Looking for faces…';
+      boxesEl.innerHTML = '';
+      playBtn.disabled = true;
+      await detectFaces(generation);
     } catch (err) {
-      bitmap = await createImageBitmap(file);
+      if (generation !== state.loadGeneration) return;
+      uploadError.textContent = 'Could not read that photo. Try a different file, or a smaller one.';
+      uploadError.hidden = false;
+      show('upload');
     }
-    // Cap the working size: detection is faster and the play face
-    // is only shown at 320px, so a 1600px working copy loses nothing.
-    const MAX = 1600;
-    const scale = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height));
-    let canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    if (state.photoUrl) URL.revokeObjectURL(state.photoUrl);
-    state.photoUrl = await new Promise((res) => canvas.toBlob((b) => res(URL.createObjectURL(b)), 'image/png'));
-    state.bitmap = bitmap;
-    state.canvas = canvas;
-    state.width = canvas.width;
-    state.height = canvas.height;
-    state.boxes = [];
-    state.selected = 0;
-    state.drawMode = false;
-    $('draw-btn').setAttribute('aria-pressed', 'false');
-    photoImg.src = state.photoUrl;
-    show('pick');
-    detectStatus.textContent = 'Looking for faces…';
-    boxesEl.innerHTML = '';
-    await detectFaces();
   }
 
   // ---------- detection ----------
-  async function detectFaces() {
-    let boxes = [];
-    try {
-      if (typeof window.FaceDetector !== 'undefined') {
-        const detector = new window.FaceDetector({ fastMode: true });
-        const faces = await detector.detect(state.canvas);
-        boxes = faces.map((f) => normalizeBox(f.boundingBox, state.width, state.height)).filter(Boolean);
-      } else {
-        detectStatus.textContent = 'This browser has no built-in face detector — loading an on-device model (one-time download)…';
-        const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
-        const fileset = await vision.FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
-        const detector = await vision.FaceDetector.createFromOptions(fileset, {
-          baseOptions: {
-            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
-            delegate: 'GPU',
-          },
-          runningMode: 'IMAGE',
-        });
-        const result = detector.detect(state.canvas);
-        boxes = (result.detections || []).map((d) => normalizeBox(d.boundingBox, state.width, state.height)).filter(Boolean);
-        detector.close();
-      }
-    } catch (err) {
-      boxes = [];
-    }
-    state.boxes = boxes;
-    if (boxes.length === 0) {
+  /**
+   * Run detection and apply its result, unless a newer photo has
+   * loaded since (see loadGeneration). Distinguishes three outcomes
+   * the original code collapsed into one: faces found, no face found,
+   * and detection itself failed — only the last two offer the manual
+   * box, and only the last explains why.
+   * @param {number} generation - The loadGeneration this detection belongs to.
+   * @returns {Promise<void>}
+   */
+  async function detectFaces(generation) {
+    const result = await detectFacesWithFallback(state.canvas, state.width, state.height);
+    if (generation !== state.loadGeneration) return;
+    state.boxes = result.boxes;
+    if (result.error) {
+      detectStatus.textContent = result.error + ' Draw a box around the face instead.';
+      state.selected = 0;
+      setDrawMode(true);
+    } else if (result.boxes.length === 0) {
       detectStatus.textContent = 'No face found — draw a box around the face, or tap “Draw a box instead”. Detection is best-effort: profile shots, sunglasses, and small faces miss most often.';
+      state.selected = 0;
       setDrawMode(true);
     } else {
-      state.selected = pickLargestFace(boxes);
-      detectStatus.textContent = boxes.length === 1
+      state.selected = pickLargestFace(result.boxes);
+      detectStatus.textContent = result.boxes.length === 1
         ? 'Found 1 face.'
-        : `Found ${boxes.length} faces — the largest is selected. Tap another box to switch.`;
-      $('next-face-btn').hidden = boxes.length < 2;
+        : `Found ${result.boxes.length} faces — the largest is selected. Tap another box to switch.`;
       setDrawMode(false);
     }
+    nextFaceBtn.hidden = result.boxes.length < 2;
     renderBoxes();
   }
 
+  /** @param {boolean} on */
   function setDrawMode(on) {
     state.drawMode = on;
     $('draw-btn').setAttribute('aria-pressed', String(on));
@@ -133,6 +224,12 @@
   }
 
   // ---------- box overlay: select / move / resize / draw ----------
+  /**
+   * Rebuild the box overlay from state. Used when the box count or
+   * selection changes. NOT used on pointermove — see updateBoxElements:
+   * rebuilding the DOM on every move discarded focus, recreated the
+   * resize handle mid-drag, and was the original code's main jank.
+   */
   function renderBoxes() {
     boxesEl.innerHTML = '';
     state.boxes.forEach((box, i) => {
@@ -155,22 +252,35 @@
       }
       boxesEl.appendChild(el);
     });
+    playBtn.disabled = state.boxes.length === 0;
   }
 
-  let gesture = null; // {kind, startBox, startX, startY, moved}
+  /** Update box positions in place during a drag, without rebuilding nodes. Falls back to a rebuild if the node count drifted. */
+  function updateBoxElements() {
+    if (boxesEl.children.length !== state.boxes.length) { renderBoxes(); return; }
+    state.boxes.forEach((box, i) => {
+      const el = boxesEl.children[i];
+      const p = pct(box);
+      el.style.left = p.left + '%'; el.style.top = p.top + '%';
+      el.style.width = p.width + '%'; el.style.height = p.height + '%';
+      el.classList.toggle('is-selected', i === state.selected);
+    });
+  }
+
+  /** @type {import('./face.js').Gesture & {index: number, rect: DOMRect, moved: boolean}|null} */
+  let gesture = null;
   photoStage.addEventListener('pointerdown', (e) => {
+    const rect = photoStage.getBoundingClientRect();
+    const f = stageFraction(e, rect);
     if (e.target.closest('.resize-handle')) {
-      const f = stageFraction(e);
-      gesture = { kind: 'resize', startBox: { ...state.boxes[state.selected] }, startX: f.x, startY: f.y };
+      gesture = { kind: 'resize', index: state.selected, startBox: { ...state.boxes[state.selected] }, startX: f.x, startY: f.y, rect, moved: false };
     } else if (e.target.closest('.face-box')) {
       const idx = Array.from(boxesEl.children).indexOf(e.target.closest('.face-box'));
       state.selected = idx;
       renderBoxes();
-      const f = stageFraction(e);
-      gesture = { kind: 'move', startBox: { ...state.boxes[idx] }, startX: f.x, startY: f.y, moved: false };
+      gesture = { kind: 'move', index: idx, startBox: { ...state.boxes[idx] }, startX: f.x, startY: f.y, rect, moved: false };
     } else if (state.drawMode) {
-      const f = stageFraction(e);
-      gesture = { kind: 'draw', startBox: null, startX: f.x, startY: f.y };
+      gesture = { kind: 'draw', index: 0, startBox: null, startX: f.x, startY: f.y, rect, moved: false };
       state.boxes = [{ x: f.x, y: f.y, width: 0.05, height: 0.05 }];
       state.selected = 0;
       renderBoxes();
@@ -181,31 +291,24 @@
   });
   photoStage.addEventListener('pointermove', (e) => {
     if (!gesture) return;
-    const f = stageFraction(e);
+    const f = stageFraction(e, gesture.rect);
     const dx = f.x - gesture.startX;
     const dy = f.y - gesture.startY;
-    if (gesture.kind === 'move') {
-      if (Math.abs(dx) + Math.abs(dy) > 0.005) gesture.moved = true;
-      state.boxes[state.selected] = clampBox01({
-        x: gesture.startBox.x + dx, y: gesture.startBox.y + dy,
-        width: gesture.startBox.width, height: gesture.startBox.height,
-      });
-    } else if (gesture.kind === 'resize') {
-      state.boxes[state.selected] = clampBox01({
-        x: gesture.startBox.x, y: gesture.startBox.y,
-        width: gesture.startBox.width + dx, height: gesture.startBox.height + dy,
-      });
-    } else if (gesture.kind === 'draw') {
-      state.boxes[0] = clampBox01({
-        x: Math.min(gesture.startX, f.x), y: Math.min(gesture.startY, f.y),
-        width: Math.abs(dx), height: Math.abs(dy),
-      });
-    }
-    renderBoxes();
+    if (Math.abs(dx) + Math.abs(dy) > MOVE_THRESHOLD) gesture.moved = true;
+    // Math lives in face.js (pure, tested); this handler only writes the result back.
+    state.boxes[gesture.index] = applyGesture(gesture, f.x, f.y);
+    updateBoxElements();
   });
   function endGesture() {
     if (!gesture) return;
-    if (gesture.kind === 'draw') setDrawMode(false);
+    // A click without a drag is not a box: discard the 0.05 stub and
+    // stay in draw mode, instead of letting the user "play" a speck.
+    if (gesture.kind === 'draw' && !gesture.moved) {
+      state.boxes = [];
+      playBtn.disabled = true;
+    } else if (gesture.kind === 'draw') {
+      setDrawMode(false);
+    }
     gesture = null;
     renderBoxes();
   }
@@ -213,15 +316,23 @@
   photoStage.addEventListener('pointercancel', endGesture);
 
   // ---------- play stage ----------
-  function startPlay() {
+  /**
+   * Crop the selected face (with CROP_PAD margin, so forehead and chin
+   * come along instead of a tight detector rectangle) and enter play.
+   * Async because the crop is encoded as a blob URL — the original
+   * used a base64 data URL, which is ~33% larger and, worse, made the
+   * existing revokeObjectURL call a silent no-op.
+   * @returns {Promise<void>}
+   */
+  async function startPlay() {
     if (state.boxes.length === 0) return;
-    const expanded = expandBox(state.boxes[state.selected], 0.2);
+    const expanded = expandBox(state.boxes[state.selected], CROP_PAD);
     const px = boxToPixels(expanded, state.width, state.height);
     const crop = document.createElement('canvas');
     crop.width = px.width; crop.height = px.height;
     crop.getContext('2d').drawImage(state.canvas, px.x, px.y, px.width, px.height, 0, 0, px.width, px.height);
     if (state.playUrl) URL.revokeObjectURL(state.playUrl);
-    state.playUrl = crop.toDataURL('image/png');
+    state.playUrl = await canvasToObjectUrl(crop, 'image/jpeg', JPEG_QUALITY);
     playFace.src = state.playUrl;
     state.best = 0;
     setStretch(1, 1);
@@ -230,6 +341,11 @@
     playFace.focus({ preventScroll: true });
   }
 
+  /**
+   * Apply a stretch and update the readout + best-stretch meter.
+   * @param {number} sx
+   * @param {number} sy
+   */
   function setStretch(sx, sy) {
     playFace.style.transform = `scale(${sx}, ${sy})`;
     stretchReadout.textContent = `${sx.toFixed(1)}× × ${sy.toFixed(1)}×`;
@@ -240,31 +356,22 @@
     }
   }
 
-  function playBoing() {
-    if (!$('sound-toggle').checked) return;
-    try {
-      state.audio = state.audio || new (window.AudioContext || window.webkitAudioContext)();
-      const ctx = state.audio;
-      if (ctx.state === 'suspended') void ctx.resume();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(320, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(70, ctx.currentTime + 0.22);
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(); osc.stop(ctx.currentTime + 0.26);
-    } catch (err) { /* sound is decoration; never block play */ }
-  }
-
+  /**
+   * Animate a button/keyboard pull, then spring back.
+   * The double requestAnimationFrame is not cargo-cult: removing the
+   * spring class and setting the transform in the same frame lets
+   * the browser batch them, so the transition never runs. Two frames
+   * force a style recalc between the two states.
+   * @param {number} sx
+   * @param {number} sy
+   */
   function animatePull(sx, sy) {
     playFace.classList.remove('is-springing');
     setStretch(sx, sy);
     requestAnimationFrame(() => requestAnimationFrame(() => {
       playFace.classList.add('is-springing');
       setStretch(1, 1);
-      playBoing();
+      playBoing(soundToggle.checked);
     }));
   }
 
@@ -286,13 +393,13 @@
     dragging = false;
     playFace.classList.add('is-springing');
     setStretch(1, 1);
-    if (lastAmount > 0.25) playBoing();
+    if (lastAmount > BOING_THRESHOLD) playBoing(soundToggle.checked);
   }
   playFace.addEventListener('pointerup', endDrag);
   playFace.addEventListener('pointercancel', endDrag);
   playFace.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); animatePull(1.7, 0.85); }
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); animatePull(0.85, 1.7); }
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); animatePull(PULL_WIDE.scaleX, PULL_WIDE.scaleY); }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); animatePull(PULL_TALL.scaleX, PULL_TALL.scaleY); }
   });
 
   // ---------- wiring ----------
@@ -311,16 +418,17 @@
   });
   fileInput.addEventListener('change', () => { if (fileInput.files.length) void loadPhoto(fileInput.files[0]); });
   $('draw-btn').addEventListener('click', () => setDrawMode(!state.drawMode));
-  $('next-face-btn').addEventListener('click', () => {
+  nextFaceBtn.addEventListener('click', () => {
+    if (state.boxes.length === 0) return;
     state.selected = (state.selected + 1) % state.boxes.length;
     renderBoxes();
   });
-  $('redetect-btn').addEventListener('click', () => void detectFaces());
-  $('play-btn').addEventListener('click', startPlay);
+  $('redetect-btn').addEventListener('click', () => void detectFaces(state.loadGeneration));
+  playBtn.addEventListener('click', () => void startPlay());
   $('new-photo-btn').addEventListener('click', () => show('upload'));
   $('back-to-pick-btn').addEventListener('click', () => show('pick'));
   $('play-new-photo-btn').addEventListener('click', () => show('upload'));
-  $('pull-wide-btn').addEventListener('click', () => animatePull(1.7, 0.85));
-  $('pull-tall-btn').addEventListener('click', () => animatePull(0.85, 1.7));
-  $('squish-btn').addEventListener('click', () => animatePull(0.6, 0.6));
+  $('pull-wide-btn').addEventListener('click', () => animatePull(PULL_WIDE.scaleX, PULL_WIDE.scaleY));
+  $('pull-tall-btn').addEventListener('click', () => animatePull(PULL_TALL.scaleX, PULL_TALL.scaleY));
+  $('squish-btn').addEventListener('click', () => animatePull(PULL_SQUISH.scaleX, PULL_SQUISH.scaleY));
 })();

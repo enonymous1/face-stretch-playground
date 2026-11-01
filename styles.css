@@ -28,6 +28,13 @@ button {
   cursor: pointer;
 }
 button:hover { background: #f0eee8; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+/* No focus style existed before: keyboard users could not tell which
+   control was focused. :focus-visible keeps mouse users clean. */
+button:focus-visible, .dropzone:focus-visible, .play-face:focus-visible {
+  outline: 3px solid #222;
+  outline-offset: 2px;
+}
 button.primary { background: #222; color: #fff; border-color: #222; }
 button.primary:hover { background: #444; }
 button[aria-pressed="true"] { background: #222; color: #fff; }
@@ -72,8 +79,11 @@ button[aria-pressed="true"] { background: #222; color: #fff; }
   white-space: nowrap;
 }
 .face-box .resize-handle {
-  position: absolute; right: -8px; bottom: -8px;
-  width: 22px; height: 22px;
+  /* 28px, up from 22px: closer to a touch target without covering
+     much of a small face box. Still below the 44px ideal — a larger
+     invisible hit area is future work if small faces prove fiddly. */
+  position: absolute; right: -10px; bottom: -10px;
+  width: 28px; height: 28px;
   background: #ff4d2e; border: 2px solid #fff; border-radius: 50%;
   cursor: nwse-resize;
 }

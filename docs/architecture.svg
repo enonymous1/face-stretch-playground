@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="380" viewBox="0 0 720 380" role="img" aria-label="Face Stretch Playground architecture: photo, working canvas, detector chain, normalized box, crop, stretch stage, all inside the browser">
+  <style>
+    .box { fill: #fff; stroke: #222; stroke-width: 1.5; rx: 12; }
+    .accent { fill: #f4f2ec; stroke: #222; stroke-width: 1.5; }
+    .title { font: 600 13px system-ui, sans-serif; fill: #222; }
+    .body { font: 12px system-ui, sans-serif; fill: #444; }
+    .arrow { stroke: #222; stroke-width: 1.5; marker-end: url(#arrowhead); }
+    .boundary { fill: none; stroke: #888; stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .note { font: 12px system-ui, sans-serif; fill: #555; }
+  </style>
+  <defs><marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#222"/></marker></defs>
+  <rect class="boundary" x="8" y="8" width="560" height="364" rx="16"/>
+  <text class="note" x="20" y="30">Browser only — photo never leaves this page</text>
+  <rect class="box" x="20" y="45" width="170" height="60"><title>Photo file</title></rect>
+  <text class="title" x="32" y="68">Photo file</text>
+  <text class="body" x="32" y="86">picker / drop / paste</text>
+  <rect class="box" x="220" y="45" width="170" height="60"><title>Working canvas</title></rect>
+  <text class="title" x="232" y="68">Working canvas</text>
+  <text class="body" x="232" y="86">1600px cap, JPEG</text>
+  <rect class="accent" x="420" y="45" width="130" height="60"><title>Detector chain</title></rect>
+  <text class="title" x="432" y="68">Detector chain</text>
+  <text class="body" x="432" y="86">native → MediaPipe</text>
+  <text class="body" x="432" y="100">GPU → CPU → manual</text>
+  <line class="arrow" x1="190" y1="75" x2="218" y2="75"/>
+  <line class="arrow" x1="390" y1="75" x2="418" y2="75"/>
+  <rect class="box" x="220" y="150" width="170" height="60"><title>Normalized box</title></rect>
+  <text class="title" x="232" y="173">Normalized box</text>
+  <text class="body" x="232" y="191">x, y, w, h in 0..1</text>
+  <rect class="box" x="420" y="150" width="130" height="60"><title>Crop</title></rect>
+  <text class="title" x="432" y="173">Crop</text>
+  <text class="body" x="432" y="191">+20% margin</text>
+  <rect class="box" x="220" y="255" width="330" height="60"><title>Stretch stage</title></rect>
+  <text class="title" x="232" y="278">Stretch stage</text>
+  <text class="body" x="232" y="296">150px drag = 1×, clamped 0.5×–2×, spring back</text>
+  <line class="arrow" x1="485" y1="105" x2="485" y2="148"/>
+  <line class="arrow" x1="420" y1="180" x2="390" y2="180"/>
+  <line class="arrow" x1="385" y1="210" x2="385" y2="253"/>
+  <rect class="box" x="585" y="45" width="125" height="60"><title>CDN fallback only</title></rect>
+  <text class="title" x="595" y="68">CDN, fallback</text>
+  <text class="body" x="595" y="86">code + model only</text>
+  <text class="body" x="595" y="100">never the photo</text>
+  <line class="arrow" x1="585" y1="75" x2="552" y2="75"/>
+  <text class="note" x="20" y="350">Pure, tested modules: stretch.js, face.js. UI shell: app.js. Detectors: detectors.js. Sound: audio.js.</text>
+</svg>

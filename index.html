@@ -24,7 +24,7 @@
       <input id="file-input" type="file" accept="image/*" hidden>
       <button id="choose-btn" type="button">Choose a photo</button>
     </div>
-    <p id="upload-error" class="error" hidden></p>
+    <p id="upload-error" class="error" role="alert" hidden></p>
   </section>
 
   <!-- Step 2: pick the face -->
@@ -42,7 +42,7 @@
       <button id="redetect-btn" type="button">Detect again</button>
     </div>
     <div class="row primary-row">
-      <button id="play-btn" type="button" class="primary">Play with this face →</button>
+      <button id="play-btn" type="button" class="primary" disabled>Play with this face →</button>
       <button id="new-photo-btn" type="button">Use a different photo</button>
     </div>
   </section>
@@ -53,7 +53,10 @@
     <div class="play-stage">
       <img id="play-face" class="play-face" alt="The selected face, ready to stretch" draggable="false">
     </div>
-    <p class="play-readout" role="status"><span id="stretch-readout">1.0× × 1.0×</span> · <span id="stretch-best">Biggest stretch yet: 1.0×</span></p>
+    <!-- No role="status" here on purpose: this updates on every
+         pointermove, and a live region would spam screen readers.
+         The detection status above is the live region; this is visual only. -->
+    <p class="play-readout"><span id="stretch-readout">1.0× × 1.0×</span> · <span id="stretch-best">Biggest stretch yet: 1.0×</span></p>
     <p class="hint">Drag the face to stretch it — let go and it springs back. Same math as the jpl-dev avatar egg: 150px of drag is 1×, clamped to 0.5×–2×.</p>
     <div class="row">
       <button id="pull-wide-btn" type="button">Pull wide</button>
@@ -71,8 +74,14 @@
     <p class="small">Inspired by the Super Mario 64 title-screen face. Not affiliated with Nintendo. Stretch math reused from the jpl-dev avatar easter egg, with permission from its author (same person).</p>
   </footer>
 </main>
+<!-- Load order matters: config first, then the pure modules, then
+     detectors/audio, then app.js, which reads all of them as globals.
+     tests/load-order.test.js guards this order. -->
+<script src="js/config.js"></script>
 <script src="js/stretch.js"></script>
 <script src="js/face.js"></script>
+<script src="js/detectors.js"></script>
+<script src="js/audio.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
